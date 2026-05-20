@@ -32,7 +32,7 @@ static void parse_memory_map(void* mb2_info) {
     hal_mem_set_map(regions, count);
 }
 
-void kernel_main(uint64_t mb2_addr) {
+void kernel_main(uint64_t mb2_magic, uint64_t mb2_addr) {
     hal_console_init();
     hal_console_clear();
 
@@ -42,13 +42,12 @@ void kernel_main(uint64_t mb2_addr) {
     hal_console_print("Multiboot2 resides in direction:");
     hal_console_print_hex(mb2_addr);
     hal_console_print("\nwith value:");
-    hal_console_print_hex(*(uint64_t*)mb2_addr);
+    hal_console_print_hex(*(uint64_t*)mb2_magic);
     // Verificar magic multiboot2
-    if (*(uint32_t*)mb2_addr != MULTIBOOT2_MAGIC) {
-//        hal_panic("Multiboot2 magic is invalid");
-        hal_console_print("\nWarning: multiboot2 magic is invalid\n");
+    if (*(uint32_t*)mb2_magic != MULTIBOOT2_MAGIC) {
+        hal_panic("Multiboot2 magic is invalid");
     } else {
-        hal_console_print("\n Multiboot2 maigc found\n");
+        hal_console_print("\n Multiboot2 magic found\n");
     }
 
     // Parsear mapa de memoria
