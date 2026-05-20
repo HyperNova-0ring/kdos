@@ -16,14 +16,14 @@ header_start:
     .long ARCH_I386
     .long HEADER_LEN
     .long CHECKSUM
-    /* tag de fin */
+    /* end of tag */
     .word 0
     .word 0
     .long 8
 header_end:
 
 /* ============================================================
-   BSS: stack y page tables
+   BSS: stack and page tables
    ============================================================ */
 .section .bss
 .align 16
@@ -37,31 +37,35 @@ pdpt_table:  .skip 4096
 pd_table:    .skip 4096
 
 /* ============================================================
-   DATA: puntero multiboot
+   DATA
    ============================================================ */
 .section .data
 .align 8
+multiboot_magic:
+    .quad 0
 multiboot_ptr:
     .quad 0
 
 /* ============================================================
-   ENTRY POINT — 32 bits, GRUB salta aquí
+   ENTRY POINT — 32 bits
    ============================================================ */
 .section .text
 .code32
 .global _start
 _start:
-    /* Establecer stack */
+    /* Setup stack */
     movl $stack_top, %esp
 
-    /* Guardar puntero multiboot (ebx) en memoria */
+    /* Save multiboot pointer (ebx) in memory */
     movl %ebx, multiboot_ptr
+    /* Save multiboot magic (eax) in memory */
+    movl %eax, multiboot_magic
 
-    /* Verificar magic multiboot2 */
+    /* Checks multiboot2 magic */
     cmpl $0x36D76289, %eax
     jne  .no_multiboot
 
-    /* Zerear BSS */
+    /* Zeroed BSS */
     movl $bss_start,  %edi
     movl $bss_end,    %ecx
     subl %edi,        %ecx
@@ -71,7 +75,7 @@ _start:
 
     call setup_page_tables
 
-    /* Activar PAE en CR4 */
+    /* Enable PAE in CR4 */
     movl %cr4,        %eax
     orl  $(1 << 5),   %eax
     movl %eax,        %cr4
@@ -80,21 +84,21 @@ _start:
     movl $pml4_table, %eax
     movl %eax,        %cr3
 
-    /* Activar Long Mode en EFER MSR */
+    /* Enable Long Mode in EFER MSR */
     movl $0xC0000080, %ecx
     rdmsr
     orl  $(1 << 8),   %eax
     wrmsr
 
-    /* Activar paginación en CR0 */
+    /* Enable pagination in CR0 */
     movl %cr0,        %eax
     orl  $(1 << 31),  %eax
     movl %eax,        %cr0
 
-    /* Cargar GDT de 64 bits */
+    /* load GDT of 64 bits */
     lgdt gdt64_pointer
 
-    /* Far jump al segmento 64-bit */
+    /* Far jump to 64-bit segmen */
     ljmp $0x08, $long_mode_entry
 
 .no_multiboot:
@@ -124,19 +128,19 @@ setup_page_tables:
     ret
 
 /* ============================================================
-   GDT DE 64 BITS
+   GDT OF 64 BITS
    ============================================================ */
 .section .rodata
 .align 8
 gdt64:
     .quad 0                                         /* null descriptor */
 gdt64_code:                                         /* offset 0x08 */
-    .quad (1<<43) | (1<<44) | (1<<47) | (1<<53)    /* código 64-bit */
+    .quad (1<<43) | (1<<44) | (1<<47) | (1<<53)    /* code 64-bit */
 gdt64_data:                                         /* offset 0x10 */
-    .quad (1<<41) | (1<<44) | (1<<47)              /* datos */
+    .quad (1<<41) | (1<<44) | (1<<47)              /* data */
 gdt64_pointer:
-    .word gdt64_pointer - gdt64 - 1                 /* tamaño - 1 */
-    .quad gdt64                                     /* dirección */
+    .word gdt64_pointer - gdt64 - 1                 /* size - 1 */
+    .quad gdt64                                     /* direction */
 
 /* ============================================================
    LONG MODE — 64 bits
@@ -151,8 +155,11 @@ long_mode_entry:
     movw %ax,   %gs
     movw %ax,   %ss
 
-    /* Pasar multiboot_ptr como primer argumento (rdi) */
+    /* First Arg: Multiboot2 Magic */
+    movq multiboot_magic, %rdi
+    /* Second Arg: Multiboot2 Header. */
     movq multiboot_ptr, %rdi
+
 
     call kernel_main
 
