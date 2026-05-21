@@ -1,7 +1,7 @@
 #ifndef MULTIBOOT2_H
 #define MULTIBOOT2_H
 
-#include <stdint.h>
+#include "types.h"
 
 #define MULTIBOOT2_MAGIC 0x36D76289
 
