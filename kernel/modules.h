@@ -6,8 +6,8 @@
 #define MAX_MODULES 16
 
 typedef struct {
-    uint32_t start;             // dirección física
-    uint32_t end;
+    uintptr_t wstart;             // dirección física
+    uintptr_t end;
     char     name[64];          // cmdline del módulo
     int      loaded;
 } module_t;

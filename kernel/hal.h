@@ -1,15 +1,14 @@
 #ifndef HAL_H
 #define HAL_H
 
-#include <stdint.h>
-#include <stddef.h>
+#include "types.h"
 
 /* ── Consola ─────────────────────────────────────────── */
 void hal_console_init(void);
 void hal_console_putchar(char c);
 void hal_console_print(const char* str);
-void hal_console_print_hex(uint64_t value);
-void hal_console_print_dec(uint64_t value);
+void hal_console_print_hex(uintptr_t value);
+void hal_console_print_dec(size_t value);
 void hal_console_clear(void);
 
 /* ── Memoria ─────────────────────────────────────────── */
