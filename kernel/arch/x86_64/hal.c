@@ -1,4 +1,4 @@
-#include "hal.h"         // interfaz a implementar
+#include "../../hal.h"         // interfaz a implementar
 #include "vga.h"         // implementación concreta x86_64
 
 /* ── Consola ─────────────────────────────────────────── */

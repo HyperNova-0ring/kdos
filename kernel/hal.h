@@ -1,7 +1,8 @@
 #ifndef HAL_H
 #define HAL_H
 
-#include "types.h"
+#include <stdint.h>
+#include <stddef.h>
 
 /* ── Consola ─────────────────────────────────────────── */
 void hal_console_init(void);

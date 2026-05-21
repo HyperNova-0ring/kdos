@@ -1,15 +1,23 @@
 #ifndef MODULES_H
 #define MODULES_H
 
-#include <stdint.h>
+#include "module_abi.h" 
 
 #define MAX_MODULES 16
 
+typedef enum {
+    MODULE_STATE_ABSENT  = 0,
+    MODULE_STATE_LOADED  = 1,   /* en memoria, sin ejecutar */
+    MODULE_STATE_RUNNING = 2,   /* main() ya fue llamado    */
+    MODULE_STATE_FAILED  = 3,
+} module_state_t;
+
 typedef struct {
-    uintptr_t start;             // dirección física
+    uintptr_t start;   // Physical Entry
     uintptr_t end;
-    char     name[64];          // cmdline del módulo
-    int      loaded;
+    char cmdline[64];  // cmdline of module
+    module_state_t state;
+    module_header_t* header;  
 } module_t;
 
 typedef struct {
@@ -17,14 +25,13 @@ typedef struct {
     uint32_t count;
 } module_list_t;
 
-// Llenar la lista desde los tags Multiboot2
+// modules utils.
 void     modules_init(void* mb2_info);
 uint32_t modules_count(void);
-
-// Buscar módulo por nombre (ej: "fat32.mod")
 module_t* modules_find(const char* name);
-
-// Devolver todos
 module_list_t* modules_get_all(void);
+
+// run all modules
+void           modules_run_all(void);
 
 #endif

@@ -42,9 +42,9 @@ void kernel_main(uint64_t mb2_magic, uint64_t mb2_addr) {
     hal_console_print("Multiboot2 resides in direction:");
     hal_console_print_hex(mb2_addr);
     hal_console_print("\nwith value:");
-    hal_console_print_hex(*(uint64_t*)mb2_magic);
+    hal_console_print_hex(mb2_magic);
     // Verificar magic multiboot2
-    if (*(uint32_t*)mb2_magic != MULTIBOOT2_MAGIC) {
+    if (mb2_magic != MULTIBOOT2_MAGIC) {
         hal_panic("Multiboot2 magic is invalid");
     } else {
         hal_console_print("\n Multiboot2 magic found\n");
@@ -74,6 +74,7 @@ void kernel_main(uint64_t mb2_magic, uint64_t mb2_addr) {
     hal_console_print_dec(mod_count);
     hal_console_print("\n");
 
+#ifdef __DEBUG__
     module_list_t* mods = modules_get_all();
     for (uint32_t i = 0; i < mods->count; i++) {
         hal_console_print("  [");
@@ -84,8 +85,11 @@ void kernel_main(uint64_t mb2_magic, uint64_t mb2_addr) {
         hal_console_print_hex(mods->modules[i].start);
         hal_console_print("\n");
     }
+#endif
 
-    // Buscar y ejecutar command.com si está presente
+    modules_run_all();
+
+    // TODO: Fix this.
     module_t* cmd = modules_find("command.com");
     if (cmd) {
         hal_console_print("\nLoading command.com...\n");

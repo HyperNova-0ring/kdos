@@ -158,7 +158,7 @@ long_mode_entry:
     /* First Arg: Multiboot2 Magic */
     movq multiboot_magic, %rdi
     /* Second Arg: Multiboot2 Header. */
-    movq multiboot_ptr, %rdi
+    movq multiboot_ptr, %rsi
 
 
     call kernel_main
