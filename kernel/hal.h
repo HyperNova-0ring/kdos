@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* ── Consola ─────────────────────────────────────────── */
+/* ── Console ─────────────────────────────────────────── */
 void hal_console_init(void);
 void hal_console_putchar(char c);
 void hal_console_print(const char* str);
@@ -12,15 +12,15 @@ void hal_console_print_hex(uintptr_t value);
 void hal_console_print_dec(size_t value);
 void hal_console_clear(void);
 
-/* ── Memoria ─────────────────────────────────────────── */
-// Mapa de memoria físico entregado por el bootloader
+/* ── Memory ──────────────────────────────────────────── */
+// Physical memory map provided by the bootloader
 typedef struct {
     uint64_t base;
     uint64_t length;
     uint32_t type;          // 1 = usable, 2 = reserved, etc.
 } hal_mem_region_t;
 
-// Devuelve el número de regiones
+// Returns the number of regions
 void hal_mem_set_map(hal_mem_region_t* map, uint32_t count);
 uint32_t hal_mem_get_map(hal_mem_region_t* out, uint32_t max);
 

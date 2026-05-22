@@ -43,14 +43,14 @@ void kernel_main(uint64_t mb2_magic, uint64_t mb2_addr) {
     hal_console_print_hex(mb2_addr);
     hal_console_print("\nwith value:");
     hal_console_print_hex(mb2_magic);
-    // Verificar magic multiboot2
+    // Verify Multiboot2 magic
     if (mb2_magic != MULTIBOOT2_MAGIC) {
         hal_panic("Multiboot2 magic is invalid");
     } else {
         hal_console_print("\n Multiboot2 magic found\n");
     }
 
-    // Parsear mapa de memoria
+    // Parse memory map
     parse_memory_map((void*)mb2_addr);
 
     hal_mem_region_t map[64];
@@ -66,7 +66,7 @@ void kernel_main(uint64_t mb2_magic, uint64_t mb2_addr) {
                                             : "  [reserved]\n");
     }
 
-    // Cargar módulos
+    // Load modules
     modules_init((void*)mb2_addr);
     uint32_t mod_count = modules_count();
 
@@ -93,8 +93,8 @@ void kernel_main(uint64_t mb2_magic, uint64_t mb2_addr) {
     module_t* cmd = modules_find("command.com");
     if (cmd) {
         hal_console_print("\nLoading command.com...\n");
-        // TODO: ejecutar el módulo
-        void (*entry)(void) = (void(*)(void))(uint64_t)cmd->start;
+        // TODO: run the module
+        void (*entry)(void) = (void(*)(void))cmd->start;
         entry();
 	hal_console_print("\n COMMAND.COM exit, going kernel panic...");
     } else {

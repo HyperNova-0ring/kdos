@@ -1,7 +1,7 @@
 #ifndef VGA_H
 #define VGA_H
 
-// Este archivo es exclusivo de x86_64
+// This file is x86_64-specific (BIOS VGA implementation)
 #ifndef __x86_64__
 #error "vga.h is only for x86 bios impl."
 #endif

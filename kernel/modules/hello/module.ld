@@ -13,13 +13,13 @@ SECTIONS {
     .rodata ALIGN(1) : { *(.rodata .rodata.*) }
     .data   ALIGN(1) : { *(.data .data.*)    }
 
-    /* GOT necesaria para PIC */
+    /* GOT required for PIC */
     .got   ALIGN(1) : { *(.got .got.*) }
     .got.plt ALIGN(1) : { *(.got.plt) }
 
     .bss ALIGN(1) : { *(.bss .bss.*) }
 
-    /* Descartar secciones innecesarias */
+    /* Discard unnecessary sections */
     /DISCARD/ : {
         *(.eh_frame)
         *(.comment)

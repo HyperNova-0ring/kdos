@@ -1,17 +1,17 @@
 #include "vga.h"
 
-// Estado interno del terminal
+// Internal terminal state
 static uint16_t* buffer;
 static int       cursor_row;
 static int       cursor_col;
 static uint8_t   current_color;
 
-// Combina foreground y background en 1 byte de color
+// Packs foreground and background into a 1-byte color value
 static inline uint8_t make_color(vga_color fg, vga_color bg) {
     return (bg << 4) | fg;
 }
 
-// Combina ASCII + color en la entrada de 2 bytes del buffer
+// Packs an ASCII character and color into a 2-byte VGA entry
 static inline uint16_t make_entry(char c, uint8_t color) {
     return (uint16_t)c | ((uint16_t)color << 8);
 }
@@ -38,16 +38,16 @@ void vga_set_color(vga_color fg, vga_color bg) {
     current_color = make_color(fg, bg);
 }
 
-// Scroll: sube todas las filas una posición hacia arriba
+// Scroll: shift all rows up by one position
 static void scroll(void) {
-    // Copiar fila N hacia fila N-1
+    // Copy row N into row N-1
     for (int row = 1; row < VGA_ROWS; row++) {
         for (int col = 0; col < VGA_COLS; col++) {
             buffer[(row - 1) * VGA_COLS + col] =
                 buffer[row * VGA_COLS + col];
         }
     }
-    // Limpiar la última fila
+    // Clear the last row
     for (int col = 0; col < VGA_COLS; col++) {
         buffer[(VGA_ROWS - 1) * VGA_COLS + col] =
             make_entry(' ', current_color);
@@ -62,7 +62,7 @@ void vga_putchar(char c) {
     } else if (c == '\r') {
         cursor_col = 0;
     } else if (c == '\t') {
-        // Tab = avanzar hasta el próximo múltiplo de 4
+        // Tab: advance to the next multiple of 4
         cursor_col = (cursor_col + 4) & ~3;
     } else {
         buffer[cursor_row * VGA_COLS + cursor_col] =
@@ -70,13 +70,13 @@ void vga_putchar(char c) {
         cursor_col++;
     }
 
-    // Wrap horizontal
+    // Horizontal wrap
     if (cursor_col >= VGA_COLS) {
         cursor_col = 0;
         cursor_row++;
     }
 
-    // Scroll si llegamos al fondo
+    // Scroll if we reach the bottom
     if (cursor_row >= VGA_ROWS) {
         scroll();
     }

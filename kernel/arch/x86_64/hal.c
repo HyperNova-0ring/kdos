@@ -1,7 +1,7 @@
 #include "../../hal.h"         // interfaz a implementar
 #include "vga.h"         // implementación concreta x86_64
 
-/* ── Consola ─────────────────────────────────────────── */
+/* ── Console ─────────────────────────────────────────── */
 void hal_console_init(void)              { vga_init(); }
 void hal_console_putchar(char c)         { vga_putchar(c); }
 void hal_console_print(const char* str)  { vga_print(str); }
@@ -22,9 +22,9 @@ void hal_console_print_dec(uint64_t value) {
     vga_print(&buf[i]);
 }
 
-/* ── Memoria ─────────────────────────────────────────── */
-// El mapa de memoria viene de Multiboot2 — se llena en kernel.c
-// y se guarda aquí para que hal_mem_get_map lo devuelva
+/* ── Memory ──────────────────────────────────────────── */
+// Memory map from Multiboot2 — filled in kernel.c
+// and stored here for hal_mem_get_map to return
 static hal_mem_region_t mem_map[64];
 static uint32_t         mem_map_count = 0;
 

@@ -17,13 +17,13 @@ typedef struct {
 
 /* Binary header of each module */
 typedef struct {
-    uint32_t       magic;          /* M ODULE_MAGIC */
+    uint32_t       magic;          /* MODULE_MAGIC */
     char           name[32];       /* module name */
     char           version[16];    /* module version */
     uint32_t       reserved;
 } __attribute__((packed)) module_header_t;
 
-/* main entrance of each module of multiboot2 */
+/* entry point for each Multiboot2 module */
 typedef void (*module_entry_fn)(const hal_api_t* hal);
 
 #endif

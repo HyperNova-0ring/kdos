@@ -1,5 +1,5 @@
 /* ============================================================
-   CONSTANTES MULTIBOOT2
+   MULTIBOOT2 CONSTANTS
    ============================================================ */
 .set MULTIBOOT2_MAGIC,  0xE85250D6
 .set ARCH_I386,         0
@@ -47,7 +47,7 @@ multiboot_ptr:
     .quad 0
 
 /* ============================================================
-   ENTRY POINT — 32 bits
+   ENTRY POINT — 32-bit
    ============================================================ */
 .section .text
 .code32
@@ -61,11 +61,11 @@ _start:
     /* Save multiboot magic (eax) in memory */
     movl %eax, multiboot_magic
 
-    /* Checks multiboot2 magic */
+    /* Check Multiboot2 magic */
     cmpl $0x36D76289, %eax
     jne  .no_multiboot
 
-    /* Zeroed BSS */
+    /* Zero BSS */
     movl $bss_start,  %edi
     movl $bss_end,    %ecx
     subl %edi,        %ecx
@@ -95,10 +95,10 @@ _start:
     orl  $(1 << 31),  %eax
     movl %eax,        %cr0
 
-    /* load GDT of 64 bits */
+    /* Load 64-bit GDT */
     lgdt gdt64_pointer
 
-    /* Far jump to 64-bit segmen */
+    /* Far jump to 64-bit segment */
     ljmp $0x08, $long_mode_entry
 
 .no_multiboot:
@@ -121,14 +121,22 @@ setup_page_tables:
     movl %eax,        pdpt_table
     movl $0,          pdpt_table + 4
 
-    /* PD[0] → huge page 2MB */
-    movl $0b10000011, pd_table
-    movl $0,          pd_table + 4
+    /* PD[0..63]: identity-map 64 x 2MB huge pages (0–128MB) */
+    xorl  %ecx,       %ecx        /* page index */
+    movl  $0x83,      %eax        /* present + writable + huge (PS) */
+.map_pd_loop:
+    leal  pd_table(,%ecx,8), %edi
+    movl  %eax,       (%edi)
+    movl  $0,         4(%edi)
+    addl  $0x200000,  %eax        /* advance by 2MB */
+    incl  %ecx
+    cmpl  $64,        %ecx
+    jl    .map_pd_loop
 
     ret
 
 /* ============================================================
-   GDT OF 64 BITS
+   64-BIT GDT
    ============================================================ */
 .section .rodata
 .align 8
@@ -140,10 +148,10 @@ gdt64_data:                                         /* offset 0x10 */
     .quad (1<<41) | (1<<44) | (1<<47)              /* data */
 gdt64_pointer:
     .word gdt64_pointer - gdt64 - 1                 /* size - 1 */
-    .quad gdt64                                     /* direction */
+    .quad gdt64                                     /* base address */
 
 /* ============================================================
-   LONG MODE — 64 bits
+   LONG MODE — 64-bit
    ============================================================ */
 .section .text
 .code64
@@ -155,9 +163,9 @@ long_mode_entry:
     movw %ax,   %gs
     movw %ax,   %ss
 
-    /* First Arg: Multiboot2 Magic */
+    /* First argument: Multiboot2 magic */
     movq multiboot_magic, %rdi
-    /* Second Arg: Multiboot2 Header. */
+    /* Second argument: Multiboot2 info pointer */
     movq multiboot_ptr, %rsi
 
 
@@ -167,4 +175,3 @@ long_mode_entry:
 .halt:
     hlt
     jmp .halt
-    

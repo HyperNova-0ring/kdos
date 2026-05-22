@@ -7,8 +7,8 @@
 
 typedef enum {
     MODULE_STATE_ABSENT  = 0,
-    MODULE_STATE_LOADED  = 1,   /* en memoria, sin ejecutar */
-    MODULE_STATE_RUNNING = 2,   /* main() ya fue llamado    */
+    MODULE_STATE_LOADED  = 1,   /* loaded in memory, not yet run */
+    MODULE_STATE_RUNNING = 2,   /* main() has been called        */
     MODULE_STATE_FAILED  = 3,
 } module_state_t;
 
@@ -25,7 +25,7 @@ typedef struct {
     uint32_t count;
 } module_list_t;
 
-// modules utils.
+// module utilities
 void     modules_init(void* mb2_info);
 uint32_t modules_count(void);
 module_t* modules_find(const char* name);

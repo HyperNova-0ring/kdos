@@ -5,35 +5,35 @@
 
 #define MULTIBOOT2_MAGIC 0x36D76289
 
-/* Tipos de tags en la estructura de info */
+/* Tag type constants */
 #define MB2_TAG_END          0
 #define MB2_TAG_CMDLINE      1
 #define MB2_TAG_MODULE       3
 #define MB2_TAG_MMAP         6
 #define MB2_TAG_FRAMEBUFFER  8
 
-/* Cabecera de la estructura de info */
+/* Multiboot2 info structure header */
 typedef struct {
     uint32_t total_size;
     uint32_t reserved;
 } __attribute__((packed)) mb2_info_t;
 
-/* Cabecera genérica de tag */
+/* Generic tag header */
 typedef struct {
     uint32_t type;
     uint32_t size;
 } __attribute__((packed)) mb2_tag_t;
 
-/* Tag de módulo (un módulo cargado por GRUB) */
+/* Module tag (a module loaded by GRUB) */
 typedef struct {
     uint32_t type;          // = 3
     uint32_t size;
-    uint32_t mod_start;     // dirección física de inicio
-    uint32_t mod_end;       // dirección física de fin
-    char     cmdline[];     // nombre/argumentos del módulo
+    uint32_t mod_start;     /* physical start address — always 32-bit per MB2 spec */
+    uint32_t mod_end;       /* physical end address — always 32-bit per MB2 spec */
+    char     cmdline[];     /* module name and arguments */
 } __attribute__((packed)) mb2_tag_module_t;
 
-/* Tag de mapa de memoria */
+/* Memory map tag */
 typedef struct {
     uint32_t type;          // = 6
     uint32_t size;
@@ -41,7 +41,7 @@ typedef struct {
     uint32_t entry_version;
 } __attribute__((packed)) mb2_tag_mmap_t;
 
-/* Entrada individual del mapa de memoria */
+/* Individual memory map entry */
 typedef struct {
     uint64_t base_addr;
     uint64_t length;
@@ -49,7 +49,7 @@ typedef struct {
     uint32_t reserved;
 } __attribute__((packed)) mb2_mmap_entry_t;
 
-/* Iterar tags: cada tag está alineado a 8 bytes */
+/* Tag iteration: each tag is 8-byte aligned */
 #define MB2_TAG_NEXT(tag) \
     ((mb2_tag_t*)(((uint8_t*)(tag)) + (((tag)->size + 7) & ~7)))
 

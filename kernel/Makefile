@@ -1,4 +1,4 @@
-# Verbose: mostrar comandos completos solo si VERBOSE=1
+# Verbose: show full commands only when VERBOSE=1
 VERBOSE ?= 0
 ifeq ($(VERBOSE), 0)
     Q = @
@@ -6,15 +6,15 @@ else
     Q =
 endif
 
-# Arquitectura por defecto
+# Default architecture
 ARCH ?= x86_64
 
-# Toolchain según arquitectura
+# Toolchain for the target architecture
 CC  = $(ARCH)-elf-gcc
 LD  = $(ARCH)-elf-ld
 OBJCOPY = $(ARCH)-elf-objcopy
 
-# Directorios
+# Directories
 ARCH_DIR = arch/$(ARCH)
 OBJ_DIR  = build/$(ARCH)
 MOD_DIR  = modules
@@ -27,12 +27,12 @@ CFLAGS  = -ffreestanding -mno-red-zone -fno-stack-protector \
 
 LDFLAGS = -T $(ARCH_DIR)/link.ld -nostdlib
 
-# Fuentes
+# Sources
 C_COMMON_SRCS = kernel.c modules.c
 C_ARCH_SRCS   = $(wildcard $(ARCH_DIR)/*.c)
 S_ARCH_SRCS   = $(wildcard $(ARCH_DIR)/*.S)
 
-# Objetos
+# Objects
 OBJS  = $(patsubst %.c,                 $(OBJ_DIR)/%.o,      $(C_COMMON_SRCS))
 OBJS += $(patsubst $(ARCH_DIR)/%.c,     $(OBJ_DIR)/arch/%.o, $(C_ARCH_SRCS))
 OBJS += $(patsubst $(ARCH_DIR)/%.S,     $(OBJ_DIR)/arch/%.o, $(S_ARCH_SRCS))
@@ -43,7 +43,7 @@ MODULE_BINS = $(foreach d, $(MODULE_DIRS), \
 
 TARGET = build/kernel-$(ARCH).elf
 
-# ─── REGLAS ────────────────────────────────────────────────
+# ─── RULES ─────────────────────────────────────────────────
 
 all: $(TARGET) $(MODULE_BINS)
 
@@ -83,7 +83,7 @@ build/modules/%.bin:
 	    build/modules/$*.elf $@
 	@echo "[MOD] $@"
 
-# ─── ISO y QEMU ────────────────────────────────────────────
+# ─── ISO and QEMU ──────────────────────────────────────────
 
 iso: all
 	$(Q)mkdir -p iso/boot/grub iso/modules

@@ -12,7 +12,7 @@ static hal_api_t kernel_hal = {
     .panic     = hal_panic,
 };
 
-// Copiar string sin stdlib
+/* String copy without stdlib */
 static void str_copy(char* dst, const char* src, int max) {
     int i = 0;
     while (src[i] && i < max - 1) { dst[i] = src[i]; i++; }
@@ -38,12 +38,13 @@ void modules_init(void* mb2_info) {
             if (i < MAX_MODULES) {
                 module_t* m = &module_list.modules[i];
 
+                /* MB2 module addresses are 32-bit; zero-extend to uintptr_t */
                 m->start = (uintptr_t)mod->mod_start;
                 m->end   = (uintptr_t)mod->mod_end;
                 m->state = MODULE_STATE_LOADED;
                 str_copy(m->cmdline, mod->cmdline, 64);
 
-                /* Verificar si el binario tiene el header válido */
+                /* Verify the binary has a valid module header */
                 module_header_t* hdr = (module_header_t*)m->start;
                 if (hdr->magic == MODULE_MAGIC) {
                     m->header = hdr;
@@ -61,31 +62,6 @@ void modules_init(void* mb2_info) {
         tag = MB2_TAG_NEXT(tag);
     }
 }
-/*
-void modules_run_all(void) {
-    for (uint32_t i = 0; i < module_list.count; i++) {
-        module_t* m = &module_list.modules[i];
-
-        if (m->state != MODULE_STATE_LOADED || m->header == NULL)
-            continue;
-
-        hal_console_print("  [MOD] ");
-        hal_console_print(m->header->name);
-        hal_console_print(" v");
-        hal_console_print(m->header->version);
-        hal_console_print("\n");
-        hal_console_print("  entry offset: ");
-        hal_console_print_dec(m->header->entry_offset);
-        hal_console_print("\n");
-
-        // Entry point = justo despues del header
-        module_entry_fn entry = (module_entry_fn)
-            (m->start + sizeof(module_header_t));
-
-        m->state = MODULE_STATE_RUNNING;
-        entry(&kernel_hal);
-    }
-} */
 
 void modules_run_all(void) {
     for (uint32_t i = 0; i < module_list.count; i++) {
@@ -98,28 +74,6 @@ void modules_run_all(void) {
         hal_console_print(m->header->name);
         hal_console_print(" v");
         hal_console_print(m->header->version);
-        hal_console_print("\n");
-
-        /* Debug: mostrar direcciones */
-        hal_console_print("  mod_start:    ");
-        hal_console_print_hex(m->start);
-        hal_console_print("\n");
-
-        hal_console_print("  header_size:  ");
-        hal_console_print_dec(sizeof(module_header_t));
-        hal_console_print("\n");
-
-        hal_console_print("  entry_addr:   ");
-        hal_console_print_hex(m->start + sizeof(module_header_t));
-        hal_console_print("\n");
-
-        /* Mostrar los primeros bytes en el punto de entrada */
-        uint8_t* entry_bytes = (uint8_t*)(m->start + sizeof(module_header_t));
-        hal_console_print("  entry_bytes:  ");
-        for (int j = 0; j < 8; j++) {
-            hal_console_print_hex(entry_bytes[j]);
-            hal_console_print(" ");
-        }
         hal_console_print("\n");
 
         module_entry_fn entry = (module_entry_fn)

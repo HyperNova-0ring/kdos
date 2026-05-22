@@ -3,12 +3,12 @@ ENTRY(_start)
 SECTIONS {
     . = 1M;
 
-    /* PRIMERO el header multiboot — GRUB lo busca en los primeros 32KB */
+    /* Multiboot header first — GRUB searches for it within the first 32KB */
     .multiboot ALIGN(8) : {
         KEEP(*(.multiboot))
     }
 
-    /* DESPUÉS el código */
+    /* Code section */
     .text ALIGN(4K) : {
         *(.text .text.*)
     }
@@ -24,9 +24,9 @@ SECTIONS {
     }
 
     .bss ALIGN(4K) : {
-        bss_start = .;      /* símbolo que usaremos en asm */
+        bss_start = .;      /* symbol referenced in assembly */
         *(COMMON)
         *(.bss .bss.*)
-        bss_end = .;        /* símbolo de fin */
+        bss_end = .;        /* end symbol */
     }
 }
