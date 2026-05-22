@@ -1,5 +1,5 @@
-#include "../../hal.h"         // interfaz a implementar
-#include "vga.h"         // implementación concreta x86_64
+#include "../../hal.h" 
+#include "vga.h" 
 
 /* ── Console ─────────────────────────────────────────── */
 void hal_console_init(void)              { vga_init(); }
