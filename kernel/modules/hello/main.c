@@ -9,6 +9,6 @@ const module_header_t module_info = {
 };
 
 __attribute__((section(".text.entry")))
-void module_main(const hal_api_t* hal) {
-    hal->print("Hello World!\n");
+void module_main(const kst_t* kst) {
+    kst->console.print("Hello World!\n");
 }

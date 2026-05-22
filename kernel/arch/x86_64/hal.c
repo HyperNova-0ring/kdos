@@ -3,6 +3,7 @@
 #include "vga.h"
 #include "idt.h"
 #include "multiboot2.h"
+#include "pmm.h"
 
 /* ── Console ─────────────────────────────────────────── */
 void hal_console_init(void)              { vga_init(); }
@@ -101,6 +102,11 @@ void hal_arch_init(uint64_t boot_magic, uint64_t boot_addr) {
 
     hal_mem_set_map(regions, count);
 }
+
+/* ── Physical memory allocator ───────────────────────── */
+void      hal_mem_init(void)                             { pmm_init(); }
+uintptr_t hal_mem_alloc_pages(uint32_t n)                { return pmm_alloc_pages(n); }
+void      hal_mem_free_pages(uintptr_t addr, uint32_t n) { pmm_free_pages(addr, n); }
 
 /* ── Interrupts ──────────────────────────────────────── */
 void hal_idt_init(void) { idt_init(); }

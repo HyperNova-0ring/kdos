@@ -1,5 +1,8 @@
 #include "hal.h"
 #include "modules.h"
+#include "heap.h"
+
+extern uintptr_t kernel_end;
 
 void kernel_main(uint64_t boot_magic, uint64_t boot_addr) {
     hal_console_init();
@@ -10,6 +13,8 @@ void kernel_main(uint64_t boot_magic, uint64_t boot_addr) {
     hal_console_print("---------------\n\n");
 
     hal_arch_init(boot_magic, boot_addr);
+    hal_mem_init();
+    heap_init((uintptr_t)&kernel_end);
 
     hal_mem_region_t map[64];
     uint32_t n = hal_mem_get_map(map, 64);

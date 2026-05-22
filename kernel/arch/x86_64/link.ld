@@ -27,6 +27,8 @@ SECTIONS {
         bss_start = .;      /* symbol referenced in assembly */
         *(COMMON)
         *(.bss .bss.*)
-        bss_end = .;        /* end symbol */
+        bss_end = .;
     }
+
+    kernel_end = ALIGN(4K);
 }

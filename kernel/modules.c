@@ -1,15 +1,93 @@
 #include "modules.h"
 #include "hal.h"
+#include "heap.h"
 
 static module_list_t module_list;
 
-static hal_api_t kernel_hal = {
-    .print     = hal_console_print,
-    .print_hex = hal_console_print_hex,
-    .print_dec = hal_console_print_dec,
-    .putchar   = hal_console_putchar,
-    .clear     = hal_console_clear,
-    .panic     = hal_panic,
+/* ── KST stub implementations ────────────────────────────── */
+
+static int kst_getchar_stub(void) {
+    return -1;
+}
+
+
+static int kst_write(int fd, const void* buf, size_t len) {
+    if (fd == 1 || fd == 2) {
+        const char* s = (const char*)buf;
+        for (size_t i = 0; i < len; i++)
+            hal_console_putchar(s[i]);
+        return (int)len;
+    }
+    return -1;
+}
+
+static int kst_read_stub(int fd, void* buf, size_t len) {
+    (void)fd; (void)buf; (void)len;
+    return -1;
+}
+
+static int kst_open_stub(const char* path, int flags, int mode) {
+    (void)path; (void)flags; (void)mode;
+    return -1;
+}
+
+static int kst_close_stub(int fd) {
+    (void)fd;
+    return -1;
+}
+
+static int kst_isatty(int fd) {
+    return (fd >= 0 && fd <= 2) ? 1 : 0;
+}
+
+static int kst_lseek_stub(int fd, int offset, int whence) {
+    (void)fd; (void)offset; (void)whence;
+    return -1;
+}
+
+static int kst_fstat_stub(int fd, void* st) {
+    (void)fd; (void)st;
+    return -1;
+}
+
+static void kst_exit(int status) {
+    (void)status;
+    hal_panic("module called exit()");
+}
+
+static int kst_getpid(void) {
+    return 1;
+}
+
+/* ── Kernel Services Table ───────────────────────────────── */
+
+static kst_t kernel_kst = {
+    .version = KST_VERSION,
+    .console = {
+        .print     = hal_console_print,
+        .print_hex = hal_console_print_hex,
+        .print_dec = hal_console_print_dec,
+        .putchar   = hal_console_putchar,
+        .clear     = hal_console_clear,
+        .getchar   = kst_getchar_stub,
+    },
+    .mem = {
+        .sbrk = heap_sbrk,
+    },
+    .io = {
+        .write  = kst_write,
+        .read   = kst_read_stub,
+        .open   = kst_open_stub,
+        .close  = kst_close_stub,
+        .isatty = kst_isatty,
+        .lseek  = kst_lseek_stub,
+        .fstat  = kst_fstat_stub,
+    },
+    .sys = {
+        .exit   = kst_exit,
+        .panic  = hal_panic,
+        .getpid = kst_getpid,
+    },
 };
 
 static void str_copy(char* dst, const char* src, int max) {
@@ -65,7 +143,7 @@ void modules_run_all(void) {
             (m->start + sizeof(module_header_t));
 
         m->state = MODULE_STATE_RUNNING;
-        entry(&kernel_hal);
+        entry(&kernel_kst);
     }
 }
 
