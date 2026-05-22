@@ -26,8 +26,8 @@ typedef struct {
 } module_list_t;
 
 // module utilities
-void     modules_init(void* mb2_info);
-uint32_t modules_count(void);
+void      modules_register(uintptr_t start, uintptr_t end, const char* cmdline);
+uint32_t  modules_count(void);
 module_t* modules_find(const char* name);
 module_list_t* modules_get_all(void);
 

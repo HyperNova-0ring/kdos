@@ -1,5 +1,5 @@
 #include "modules.h"
-#include "multiboot2.h"
+#include "hal.h"
 
 static module_list_t module_list;
 
@@ -12,7 +12,6 @@ static hal_api_t kernel_hal = {
     .panic     = hal_panic,
 };
 
-/* String copy without stdlib */
 static void str_copy(char* dst, const char* src, int max) {
     int i = 0;
     while (src[i] && i < max - 1) { dst[i] = src[i]; i++; }
@@ -24,48 +23,34 @@ static int str_eq(const char* a, const char* b) {
     return *a == *b;
 }
 
-void modules_init(void* mb2_info) {
-    module_list.count = 0;
+void modules_register(uintptr_t start, uintptr_t end, const char* cmdline) {
+    if (module_list.count >= MAX_MODULES) return;
 
-    mb2_info_t* info = (mb2_info_t*)mb2_info;
-    mb2_tag_t*  tag  = (mb2_tag_t*)((uint8_t*)info + 8);
+    uint32_t i  = module_list.count;
+    module_t *m = &module_list.modules[i];
 
-    while (tag->type != MB2_TAG_END) {
-        if (tag->type == MB2_TAG_MODULE) {
-            mb2_tag_module_t* mod = (mb2_tag_module_t*)tag;
-            uint32_t i = module_list.count;
+    m->start = start;
+    m->end   = end;
+    m->state = MODULE_STATE_LOADED;
+    str_copy(m->cmdline, cmdline, 64);
 
-            if (i < MAX_MODULES) {
-                module_t* m = &module_list.modules[i];
-
-                /* MB2 module addresses are 32-bit; zero-extend to uintptr_t */
-                m->start = (uintptr_t)mod->mod_start;
-                m->end   = (uintptr_t)mod->mod_end;
-                m->state = MODULE_STATE_LOADED;
-                str_copy(m->cmdline, mod->cmdline, 64);
-
-                /* Verify the binary has a valid module header */
-                module_header_t* hdr = (module_header_t*)m->start;
-                if (hdr->magic == MODULE_MAGIC) {
-                    m->header = hdr;
-                } else {
-                    m->header = NULL;
-                    m->state  = MODULE_STATE_FAILED;
-                    hal_console_print("  [WARN] ");
-                    hal_console_print(m->cmdline);
-                    hal_console_print(": missing module header\n");
-                }
-
-                module_list.count++;
-            }
-        }
-        tag = MB2_TAG_NEXT(tag);
+    module_header_t *hdr = (module_header_t *)start;
+    if (hdr->magic == MODULE_MAGIC) {
+        m->header = hdr;
+    } else {
+        m->header = NULL;
+        m->state  = MODULE_STATE_FAILED;
+        hal_console_print("  [WARN] ");
+        hal_console_print(cmdline);
+        hal_console_print(": missing module header\n");
     }
+
+    module_list.count++;
 }
 
 void modules_run_all(void) {
     for (uint32_t i = 0; i < module_list.count; i++) {
-        module_t* m = &module_list.modules[i];
+        module_t *m = &module_list.modules[i];
 
         if (m->state != MODULE_STATE_LOADED || m->header == NULL)
             continue;

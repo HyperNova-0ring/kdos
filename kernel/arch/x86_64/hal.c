@@ -1,5 +1,8 @@
-#include "../../hal.h" 
-#include "vga.h" 
+#include "../../hal.h"
+#include "../../modules.h"
+#include "vga.h"
+#include "idt.h"
+#include "multiboot2.h"
 
 /* ── Console ─────────────────────────────────────────── */
 void hal_console_init(void)              { vga_init(); }
@@ -53,6 +56,54 @@ void hal_cpu_disable_interrupts(void) {
 void hal_cpu_enable_interrupts(void) {
     __asm__ volatile ("sti");
 }
+
+/* ── Arch init ───────────────────────────────────────── */
+void hal_arch_init(uint64_t boot_magic, uint64_t boot_addr) {
+    if (boot_magic != MULTIBOOT2_MAGIC)
+        hal_panic("Multiboot2 magic is invalid");
+
+    vga_print("Multiboot2 OK @ ");
+    vga_print_hex(boot_addr);
+    vga_print("\n");
+
+    mb2_info_t *info = (mb2_info_t *)boot_addr;
+    mb2_tag_t  *tag  = (mb2_tag_t *)((uint8_t *)info + 8);
+
+    hal_mem_region_t regions[64];
+    uint32_t         count = 0;
+
+    while (tag->type != MB2_TAG_END) {
+        if (tag->type == MB2_TAG_MMAP) {
+            mb2_tag_mmap_t   *mmap  = (mb2_tag_mmap_t *)tag;
+            mb2_mmap_entry_t *entry = (mb2_mmap_entry_t *)
+                                      ((uint8_t *)mmap + sizeof(*mmap));
+            mb2_mmap_entry_t *end   = (mb2_mmap_entry_t *)
+                                      ((uint8_t *)mmap + mmap->size);
+            while (entry < end && count < 64) {
+                regions[count].base   = entry->base_addr;
+                regions[count].length = entry->length;
+                regions[count].type   = entry->type;
+                count++;
+                entry = (mb2_mmap_entry_t *)
+                        ((uint8_t *)entry + mmap->entry_size);
+            }
+        }
+
+        if (tag->type == MB2_TAG_MODULE) {
+            mb2_tag_module_t *mod = (mb2_tag_module_t *)tag;
+            modules_register((uintptr_t)mod->mod_start,
+                             (uintptr_t)mod->mod_end,
+                             mod->cmdline);
+        }
+
+        tag = MB2_TAG_NEXT(tag);
+    }
+
+    hal_mem_set_map(regions, count);
+}
+
+/* ── Interrupts ──────────────────────────────────────── */
+void hal_idt_init(void) { idt_init(); }
 
 /* ── Panic ───────────────────────────────────────────── */
 void hal_panic(const char* msg) {

@@ -29,6 +29,15 @@ void hal_cpu_halt(void);
 void hal_cpu_disable_interrupts(void);
 void hal_cpu_enable_interrupts(void);
 
+/* ── Arch init ───────────────────────────────────────── */
+/* Called once with the raw boot parameters (meaning is arch-specific).
+   Responsible for validating the bootloader, populating the memory map
+   and registering loaded modules. */
+void hal_arch_init(uint64_t boot_magic, uint64_t boot_addr);
+
+/* ── Interrupts ──────────────────────────────────────── */
+void hal_idt_init(void);
+
 /* ── Panic ───────────────────────────────────────────── */
 void hal_panic(const char* msg);
 
