@@ -2,6 +2,7 @@
 #include "../../modules.h"
 #include "vga.h"
 #include "serial.h"
+#include "keyboard.h"
 #include "idt.h"
 #include "multiboot2.h"
 #include "pmm.h"
@@ -42,10 +43,12 @@ hal_console_type_t hal_early_parse_console(uint64_t boot_addr) {
 
 void hal_console_init(hal_console_type_t type) {
     active_console = type;
-    if (type == HAL_CONSOLE_SERIAL)
+    if (type == HAL_CONSOLE_SERIAL) {
         serial_init();
-    else
+    } else {
         vga_init();
+        keyboard_init();
+    }
 }
 
 void hal_console_putchar(char c) {
@@ -73,6 +76,12 @@ void hal_console_clear(void) {
     if (active_console == HAL_CONSOLE_VGA)
         vga_clear();
     /* serial has no clear */
+}
+
+int hal_console_getchar(void) {
+    if (active_console == HAL_CONSOLE_SERIAL)
+        return serial_getchar();
+    return keyboard_getchar();
 }
 
 void hal_console_print_dec(uint64_t value) {

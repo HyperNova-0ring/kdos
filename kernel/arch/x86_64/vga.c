@@ -1,10 +1,24 @@
 #include "vga.h"
 
-// Internal terminal state
+#define VGA_CRTC_ADDR 0x3D4
+#define VGA_CRTC_DATA 0x3D5
+
+static inline void outb(uint16_t port, uint8_t val) {
+    __asm__ volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
+}
+
 static uint16_t* buffer;
 static int       cursor_row;
 static int       cursor_col;
 static uint8_t   current_color;
+
+static void vga_update_cursor(void) {
+    uint16_t pos = (uint16_t)(cursor_row * VGA_COLS + cursor_col);
+    outb(VGA_CRTC_ADDR, 0x0F);
+    outb(VGA_CRTC_DATA, (uint8_t)(pos & 0xFF));
+    outb(VGA_CRTC_ADDR, 0x0E);
+    outb(VGA_CRTC_DATA, (uint8_t)(pos >> 8));
+}
 
 // Packs foreground and background into a 1-byte color value
 static inline uint8_t make_color(vga_color fg, vga_color bg) {
@@ -32,6 +46,7 @@ void vga_clear(void) {
     }
     cursor_row = 0;
     cursor_col = 0;
+    vga_update_cursor();
 }
 
 void vga_set_color(vga_color fg, vga_color bg) {
@@ -62,24 +77,31 @@ void vga_putchar(char c) {
     } else if (c == '\r') {
         cursor_col = 0;
     } else if (c == '\t') {
-        // Tab: advance to the next multiple of 4
         cursor_col = (cursor_col + 4) & ~3;
+    } else if (c == '\b') {
+        if (cursor_col > 0) {
+            cursor_col--;
+        } else if (cursor_row > 0) {
+            cursor_row--;
+            cursor_col = VGA_COLS - 1;
+        }
+        /* Move only — the caller's ' ' will overwrite the cell */
     } else {
         buffer[cursor_row * VGA_COLS + cursor_col] =
             make_entry(c, current_color);
         cursor_col++;
     }
 
-    // Horizontal wrap
     if (cursor_col >= VGA_COLS) {
         cursor_col = 0;
         cursor_row++;
     }
 
-    // Scroll if we reach the bottom
     if (cursor_row >= VGA_ROWS) {
         scroll();
     }
+
+    vga_update_cursor();
 }
 
 void vga_print(const char* str) {

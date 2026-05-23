@@ -1,12 +1,6 @@
 #include "module_abi.h"
 
-__attribute__((section(".module_header")))
-const module_header_t module_info = {
-    .magic    = MODULE_MAGIC,
-    .name     = "exception_test",
-    .version  = "0.1",
-    .reserved = 0,
-};
+MODULE_HEADER("exception_test", "test");
 
 /* ---- helpers ----------------------------------------------- */
 

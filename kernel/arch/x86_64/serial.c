@@ -36,6 +36,15 @@ void serial_print(const char* str) {
         serial_putchar(*str++);
 }
 
+static int data_ready(void) {
+    return inb(COM1 + 5) & 0x01;
+}
+
+int serial_getchar(void) {
+    while (!data_ready());
+    return (int)(uint8_t)inb(COM1);
+}
+
 void serial_print_hex(uint64_t value) {
     char buf[17];
     buf[16] = '\0';

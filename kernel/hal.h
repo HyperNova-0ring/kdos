@@ -20,6 +20,7 @@ void hal_console_print(const char* str);
 void hal_console_print_hex(uintptr_t value);
 void hal_console_print_dec(size_t value);
 void hal_console_clear(void);
+int  hal_console_getchar(void);   /* blocking: serial or PS/2 keyboard */
 
 /* ── Memory ──────────────────────────────────────────── */
 typedef struct {

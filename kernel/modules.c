@@ -4,12 +4,7 @@
 
 static module_list_t module_list;
 
-/* ── KST stub implementations ────────────────────────────── */
-
-static int kst_getchar_stub(void) {
-    return -1;
-}
-
+/* ── KST implementations ─────────────────────────────────── */
 
 static int kst_write(int fd, const void* buf, size_t len) {
     if (fd == 1 || fd == 2) {
@@ -21,17 +16,24 @@ static int kst_write(int fd, const void* buf, size_t len) {
     return -1;
 }
 
-static int kst_read_stub(int fd, void* buf, size_t len) {
-    (void)fd; (void)buf; (void)len;
-    return -1;
+static int kst_read(int fd, void* buf, size_t len) {
+    if (fd != 0 || len == 0)
+        return -1;
+    char* dst = (char*)buf;
+    for (size_t i = 0; i < len; i++) {
+        int c = hal_console_getchar();
+        dst[i] = (char)c;
+        if (c == '\n') return (int)(i + 1);
+    }
+    return (int)len;
 }
 
-static int kst_open_stub(const char* path, int flags, int mode) {
+static int kst_open(const char* path, int flags, int mode) {
     (void)path; (void)flags; (void)mode;
     return -1;
 }
 
-static int kst_close_stub(int fd) {
+static int kst_close(int fd) {
     (void)fd;
     return -1;
 }
@@ -40,12 +42,12 @@ static int kst_isatty(int fd) {
     return (fd >= 0 && fd <= 2) ? 1 : 0;
 }
 
-static int kst_lseek_stub(int fd, int offset, int whence) {
+static int kst_lseek(int fd, int offset, int whence) {
     (void)fd; (void)offset; (void)whence;
     return -1;
 }
 
-static int kst_fstat_stub(int fd, void* st) {
+static int kst_fstat(int fd, void* st) {
     (void)fd; (void)st;
     return -1;
 }
@@ -69,19 +71,19 @@ static kst_t kernel_kst = {
         .print_dec = hal_console_print_dec,
         .putchar   = hal_console_putchar,
         .clear     = hal_console_clear,
-        .getchar   = kst_getchar_stub,
+        .getchar   = hal_console_getchar,
     },
     .mem = {
         .sbrk = heap_sbrk,
     },
     .io = {
         .write  = kst_write,
-        .read   = kst_read_stub,
-        .open   = kst_open_stub,
-        .close  = kst_close_stub,
+        .read   = kst_read,
+        .open   = kst_open,
+        .close  = kst_close,
         .isatty = kst_isatty,
-        .lseek  = kst_lseek_stub,
-        .fstat  = kst_fstat_stub,
+        .lseek  = kst_lseek,
+        .fstat  = kst_fstat,
     },
     .sys = {
         .exit   = kst_exit,
