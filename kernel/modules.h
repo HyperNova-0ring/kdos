@@ -31,7 +31,10 @@ uint32_t  modules_count(void);
 module_t* modules_find(const char* name);
 module_list_t* modules_get_all(void);
 
-// run all modules
-void           modules_run_all(void);
+// run startup/utility modules (skips entry shells)
+void modules_run_all(void);
+
+// try COMMAND.KERN, then command.com; print message and return if neither found
+void modules_launch_entry(void);
 
 #endif

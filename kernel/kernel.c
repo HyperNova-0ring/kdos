@@ -49,17 +49,7 @@ void kernel_main(uint64_t boot_magic, uint64_t boot_addr) {
 #endif
 
     modules_run_all();
-
-    // TODO: Fix this.
-    module_t *cmd = modules_find("command.com");
-    if (cmd) {
-        hal_console_print("\nLoading command.com...\n");
-        void (*entry)(void) = (void(*)(void))cmd->start;
-        entry();
-        hal_console_print("\n COMMAND.COM exit, going kernel panic...");
-    } else {
-        hal_console_print("\nCan't find a command.com executable...\n");
-    }
+    modules_launch_entry();
 
     hal_panic("kernel_main end reached.");
 }

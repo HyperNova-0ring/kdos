@@ -91,38 +91,8 @@ build/modules/%.bin:
 	    $(OBJCOPY) -O binary build/modules/$*.elf $@
 	@echo "[MOD] $@"
 
-# ─── ISO and QEMU ──────────────────────────────────────────
-
-iso: all
-	$(Q)mkdir -p iso/boot/grub iso/modules
-	$(Q)cp $(TARGET) iso/boot/kernel.elf
-	$(Q)cp build/modules/*.bin iso/modules/ 2>/dev/null || true
-	$(Q){ \
-	    echo 'set timeout=3'; \
-	    echo 'set default=0'; \
-	    echo 'menuentry "KDOS ($(ARCH))" {'; \
-	    echo '    insmod multiboot2'; \
-	    echo '    multiboot2 /boot/kernel.elf'; \
-	    for b in iso/modules/*.bin; do \
-	        n=$$(basename $$b); \
-	        echo "    module2 /modules/$$n $$n"; \
-	    done; \
-	    echo '    boot'; \
-	    echo '}'; \
-	} > iso/boot/grub/grub.cfg
-	$(Q)grub-mkrescue -o build/kernel-$(ARCH).iso iso/ 2>/dev/null
-	@echo "[ISO] build/kernel-$(ARCH).iso"
-
-run: iso
-	$(Q)qemu-system-$(ARCH) \
-	    -cdrom build/kernel-$(ARCH).iso \
-	    -m 128M \
-	    -serial stdio \
-	    -no-reboot \
-	    2>/dev/null
-
 clean:
-	$(Q)rm -rf build/ iso/
-	@echo "[CLEAN] build/ iso/"
+	$(Q)rm -rf build/
+	@echo "[CLEAN] kernel/build/"
 
-.PHONY: all iso run clean
+.PHONY: all clean

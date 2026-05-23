@@ -101,6 +101,16 @@ static int str_eq(const char* a, const char* b) {
     return *a == *b;
 }
 
+static int module_name_eq(const module_t* m, const char* name) {
+    if (str_eq(m->cmdline, name)) return 1;
+    if (m->header && str_eq(m->header->name, name)) return 1;
+    return 0;
+}
+
+static int module_is_entry_shell(const module_t* m) {
+    return module_name_eq(m, "COMMAND.KERN") || module_name_eq(m, "command.com");
+}
+
 void modules_register(uintptr_t start, uintptr_t end, const char* cmdline) {
     if (module_list.count >= MAX_MODULES) return;
 
@@ -132,6 +142,8 @@ void modules_run_all(void) {
 
         if (m->state != MODULE_STATE_LOADED || m->header == NULL)
             continue;
+        if (module_is_entry_shell(m))
+            continue;
 
         hal_console_print("  [MOD] ");
         hal_console_print(m->header->name);
@@ -147,13 +159,36 @@ void modules_run_all(void) {
     }
 }
 
+void modules_launch_entry(void) {
+    const char* candidates[] = { "COMMAND.KERN", "command.com", NULL };
+
+    for (uint32_t i = 0; candidates[i]; i++) {
+        module_t *m = modules_find(candidates[i]);
+        if (!m || m->header == NULL)
+            continue;
+
+        hal_console_print("\nLaunching ");
+        hal_console_print(m->header->name);
+        hal_console_print("...\n");
+
+        module_entry_fn entry = (module_entry_fn)
+            (m->start + sizeof(module_header_t));
+
+        m->state = MODULE_STATE_RUNNING;
+        entry(&kernel_kst);
+        return;
+    }
+
+    hal_console_print("No entry executable found (COMMAND.KERN or command.com).\n");
+}
+
 uint32_t modules_count(void) {
     return module_list.count;
 }
 
 module_t* modules_find(const char* name) {
     for (uint32_t i = 0; i < module_list.count; i++) {
-        if (str_eq(module_list.modules[i].cmdline, name))
+        if (module_name_eq(&module_list.modules[i], name))
             return &module_list.modules[i];
     }
     return NULL;
