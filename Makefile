@@ -9,21 +9,17 @@ endif
 
 OUTDIR = build/$(ARCH)
 
-KERNEL_DIR = kernel
-NEWLIB_DIR = newlib
-
-# Projects that require newlib to be built first.
-# Add new entries here as modules/programs are added.
-NEWLIB_DEPS =
+KERNEL_DIR       = kernel
+NEWLIB_DIR       = newlib
+COMMAND_KERN_DIR = command_kern
 
 # ─── Top-level targets ──────────────────────────────────────────
 
 .PHONY: all iso run clean \
-        _build-kernel _build-newlib \
-        _copy-kernel  _copy-newlib  \
-        $(NEWLIB_DEPS)
+        _build-kernel _build-newlib _build-command_kern \
+        _copy-kernel  _copy-newlib  _copy-command_kern
 
-all: _copy-kernel _copy-newlib
+all: _copy-kernel _copy-newlib _copy-command_kern
 
 iso: all
 	$(Q)mkdir -p $(OUTDIR)/iso/boot/grub $(OUTDIR)/iso/modules
@@ -55,8 +51,9 @@ run: iso
 	    2>/dev/null
 
 clean:
-	$(Q)$(MAKE) -C $(KERNEL_DIR) clean ARCH=$(ARCH)
-	$(Q)$(MAKE) -C $(NEWLIB_DIR) clean ARCH=$(ARCH)
+	$(Q)$(MAKE) -C $(KERNEL_DIR)       clean ARCH=$(ARCH)
+	$(Q)$(MAKE) -C $(NEWLIB_DIR)       clean ARCH=$(ARCH)
+	$(Q)$(MAKE) -C $(COMMAND_KERN_DIR) clean ARCH=$(ARCH)
 	$(Q)rm -rf build/
 	@echo "[CLEAN] build/"
 
@@ -68,17 +65,25 @@ _build-kernel:
 _build-newlib:
 	$(Q)$(MAKE) -C $(NEWLIB_DIR) ARCH=$(ARCH) VERBOSE=$(VERBOSE)
 
+_build-command_kern:
+	$(Q)$(MAKE) -C $(COMMAND_KERN_DIR) ARCH=$(ARCH) VERBOSE=$(VERBOSE)
+
 # ─── Artifact copy ──────────────────────────────────────────────
 
 _copy-kernel: _build-kernel
 	$(Q)mkdir -p $(OUTDIR)/modules
-	$(Q)cp $(KERNEL_DIR)/build/kernel-$(ARCH).elf $(OUTDIR)/kernel.elf
-	$(Q)cp $(KERNEL_DIR)/build/modules/*.bin $(OUTDIR)/modules/ 2>/dev/null || true
+	$(Q)cp $(KERNEL_DIR)/build/kernel-$(ARCH).elf    $(OUTDIR)/kernel.elf
+	$(Q)cp $(KERNEL_DIR)/build/modules/*.bin         $(OUTDIR)/modules/ 2>/dev/null || true
 	@echo "[COPY] kernel → $(OUTDIR)/"
 
 _copy-newlib: _build-newlib
 	$(Q)mkdir -p $(OUTDIR)
-	$(Q)cp $(NEWLIB_DIR)/build/$(ARCH)/crt.o        $(OUTDIR)/
+	$(Q)cp $(NEWLIB_DIR)/build/$(ARCH)/crt.o         $(OUTDIR)/
 	$(Q)cp $(NEWLIB_DIR)/build/$(ARCH)/libnewlib.a   $(OUTDIR)/
 	$(Q)cp $(NEWLIB_DIR)/build/$(ARCH)/module.ld     $(OUTDIR)/
 	@echo "[COPY] newlib → $(OUTDIR)/"
+
+_copy-command_kern: _build-command_kern
+	$(Q)mkdir -p $(OUTDIR)/modules
+	$(Q)cp $(COMMAND_KERN_DIR)/build/$(ARCH)/command.kern.bin $(OUTDIR)/modules/
+	@echo "[COPY] command_kern → $(OUTDIR)/modules/"

@@ -15,7 +15,7 @@ OUTDIR = build/$(ARCH)
 
 CFLAGS = -ffreestanding -mno-red-zone -fno-stack-protector \
          -mno-sse -mno-sse2 -mno-mmx \
-         -fPIC -O2 \
+         -fPIC -fvisibility=hidden -O2 \
          -I../kernel -I. \
          -isystem $(NEWLIB)/include
 

@@ -53,6 +53,20 @@ typedef struct {
 
 } kst_t;
 
+/*
+ * MODULE_HEADER — embed the module header into the binary.
+ * Call once at file scope in the module's main source file.
+ * __attribute__((used)) prevents -O2 from discarding the static const.
+ */
+#define MODULE_HEADER(name_str, version_str)                            \
+    __attribute__((section(".module_header"), used))                    \
+    static const module_header_t _module_hdr = {                       \
+        .magic    = MODULE_MAGIC,                                       \
+        .name     = name_str,                                           \
+        .version  = version_str,                                        \
+        .reserved = 0,                                                  \
+    }
+
 /* ── Module binary layout ────────────────────────────────── */
 
 typedef struct {

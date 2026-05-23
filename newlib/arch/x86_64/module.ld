@@ -30,8 +30,10 @@ SECTIONS {
     .got.plt ALIGN(1): { *(.got.plt) }
 
     .bss    ALIGN(1) : {
+        __bss_start = .;
         *(.bss .bss.*)
         *(COMMON)
+        __bss_end = .;
     }
 
     /DISCARD/ : {

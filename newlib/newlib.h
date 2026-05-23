@@ -9,7 +9,7 @@
  * The programmer only writes int main(int argc, char** argv).
  */
 #define MODULE_DEFINE(name_str, version_str)                            \
-    __attribute__((section(".module_header")))                          \
+    __attribute__((section(".module_header"), used))                    \
     static const struct {                                               \
         uint32_t magic;                                                 \
         char     name[32];                                              \
