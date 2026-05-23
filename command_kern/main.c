@@ -51,9 +51,9 @@ static int readline(const kst_t* kst, char* buf) {
 static void cmd_help(const kst_t* kst) {
     kst->console.print(
         "Available commands:\n"
-        "  help   — show this help\n"
-        "  clear  — clear the screen\n"
-        "  halt   — halt the system\n"
+        "  help   - show this help\n"
+        "  cls  - clear the screen\n"
+        "  halt   - halt the system\n"
     );
 }
 
@@ -66,7 +66,7 @@ static void cmd_unknown(const kst_t* kst, const char* cmd) {
 static void dispatch(const kst_t* kst, const char* line) {
     if (line[0] == '\0')  return;
     if (str_eq(line, "help"))  { cmd_help(kst);  return; }
-    if (str_eq(line, "clear")) { kst->console.clear(); return; }
+    if (str_eq(line, "cls")) { kst->console.clear(); return; }
     if (str_eq(line, "halt"))  { kst->sys.panic("halt requested"); }
     (void)str_starts;
     cmd_unknown(kst, line);

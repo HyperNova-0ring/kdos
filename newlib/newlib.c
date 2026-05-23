@@ -33,9 +33,42 @@ int write(int fd, const void* buf, size_t len) {
 
 int read(int fd, void* buf, size_t len) {
     if (!_kst) { errno = ENOSYS; return -1; }
-    int r = _kst->io.read(fd, buf, len);
-    if (r < 0) { errno = EIO; return -1; }
-    return r;
+
+    /* Non-stdin fds: delegate to kernel (returns -1 until fs is implemented) */
+    if (fd != 0) {
+        int r = _kst->io.read(fd, buf, len);
+        if (r < 0) { errno = EBADF; return -1; }
+        return r;
+    }
+
+    if (len == 0) return 0;
+
+    /* stdin: cooked-mode line input — echo + backspace + \r/\n termination */
+    char*  dst = (char*)buf;
+    size_t n   = 0;
+
+    while (n < len) {
+        int c = _kst->console.getchar();
+        if (c < 0) { errno = EIO; return -1; }
+
+        if (c == '\r' || c == '\n') {
+            _kst->console.putchar('\n');
+            dst[n++] = '\n';
+            break;
+        }
+        if (c == '\b' || c == 0x7F) {
+            if (n > 0) {
+                n--;
+                _kst->console.print("\b \b");
+            }
+            continue;
+        }
+        if (c >= 0x20) {
+            dst[n++] = (char)c;
+            _kst->console.putchar((char)c);
+        }
+    }
+    return (int)n;
 }
 
 int open(const char* path, int flags, int mode) {
