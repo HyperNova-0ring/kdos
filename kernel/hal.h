@@ -5,7 +5,16 @@
 #include <stddef.h>
 
 /* ── Console ─────────────────────────────────────────── */
-void hal_console_init(void);
+typedef enum {
+    HAL_CONSOLE_VGA    = 0,
+    HAL_CONSOLE_SERIAL = 1,
+} hal_console_type_t;
+
+/* Parse the Multiboot2 boot info looking for console=vga|serial in the
+   kernel cmdline. Returns HAL_CONSOLE_VGA if not found or boot_addr is 0. */
+hal_console_type_t hal_early_parse_console(uint64_t boot_addr);
+
+void hal_console_init(hal_console_type_t type);
 void hal_console_putchar(char c);
 void hal_console_print(const char* str);
 void hal_console_print_hex(uintptr_t value);

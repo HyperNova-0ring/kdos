@@ -1,5 +1,6 @@
 ARCH    ?= x86_64
 VERBOSE ?= 0
+CONSOLE ?= vga
 
 ifeq ($(VERBOSE), 0)
     Q = @
@@ -30,7 +31,7 @@ iso: all
 	    echo 'set default=0'; \
 	    echo 'menuentry "KDOS ($(ARCH))" {'; \
 	    echo '    insmod multiboot2'; \
-	    echo '    multiboot2 /boot/kernel.elf'; \
+	    echo "    multiboot2 /boot/kernel.elf console=$(CONSOLE)"; \
 	    for b in $(OUTDIR)/iso/modules/*.bin; do \
 	        [ -f "$$b" ] || continue; \
 	        n=$$(basename $$b); \

@@ -5,7 +5,8 @@
 extern uintptr_t kernel_end;
 
 void kernel_main(uint64_t boot_magic, uint64_t boot_addr) {
-    hal_console_init();
+    hal_console_type_t cons = hal_early_parse_console(boot_addr);
+    hal_console_init(cons);
     hal_console_clear();
     hal_idt_init();
 

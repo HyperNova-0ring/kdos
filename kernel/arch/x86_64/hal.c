@@ -1,19 +1,82 @@
 #include "../../hal.h"
 #include "../../modules.h"
 #include "vga.h"
+#include "serial.h"
 #include "idt.h"
 #include "multiboot2.h"
 #include "pmm.h"
 
+static hal_console_type_t active_console = HAL_CONSOLE_VGA;
+
+/* ── Early cmdline parse ─────────────────────────────── */
+
+static int cmdline_has(const char* haystack, const char* needle) {
+    for (; *haystack; haystack++) {
+        const char* h = haystack;
+        const char* n = needle;
+        while (*n && *h == *n) { h++; n++; }
+        if (!*n) return 1;
+    }
+    return 0;
+}
+
+hal_console_type_t hal_early_parse_console(uint64_t boot_addr) {
+    if (!boot_addr) return HAL_CONSOLE_VGA;
+
+    mb2_info_t *info = (mb2_info_t *)boot_addr;
+    mb2_tag_t  *tag  = (mb2_tag_t *)((uint8_t *)info + 8);
+
+    while (tag->type != MB2_TAG_END) {
+        if (tag->type == MB2_TAG_CMDLINE) {
+            mb2_tag_cmdline_t *cl = (mb2_tag_cmdline_t *)tag;
+            if (cmdline_has(cl->string, "console=serial"))
+                return HAL_CONSOLE_SERIAL;
+            return HAL_CONSOLE_VGA;
+        }
+        tag = MB2_TAG_NEXT(tag);
+    }
+    return HAL_CONSOLE_VGA;
+}
+
 /* ── Console ─────────────────────────────────────────── */
-void hal_console_init(void)              { vga_init(); }
-void hal_console_putchar(char c)         { vga_putchar(c); }
-void hal_console_print(const char* str)  { vga_print(str); }
-void hal_console_print_hex(uint64_t v)   { vga_print_hex(v); }
-void hal_console_clear(void)             { vga_clear(); }
+
+void hal_console_init(hal_console_type_t type) {
+    active_console = type;
+    if (type == HAL_CONSOLE_SERIAL)
+        serial_init();
+    else
+        vga_init();
+}
+
+void hal_console_putchar(char c) {
+    if (active_console == HAL_CONSOLE_SERIAL)
+        serial_putchar(c);
+    else
+        vga_putchar(c);
+}
+
+void hal_console_print(const char* str) {
+    if (active_console == HAL_CONSOLE_SERIAL)
+        serial_print(str);
+    else
+        vga_print(str);
+}
+
+void hal_console_print_hex(uint64_t v) {
+    if (active_console == HAL_CONSOLE_SERIAL)
+        serial_print_hex(v);
+    else
+        vga_print_hex(v);
+}
+
+void hal_console_clear(void) {
+    if (active_console == HAL_CONSOLE_VGA)
+        vga_clear();
+    /* serial has no clear */
+}
 
 void hal_console_print_dec(uint64_t value) {
-    if (value == 0) { vga_putchar('0'); return; }
+    if (value == 0) { hal_console_putchar('0'); return; }
 
     char buf[20];
     int  i = 19;
@@ -23,12 +86,11 @@ void hal_console_print_dec(uint64_t value) {
         buf[--i] = '0' + (value % 10);
         value   /= 10;
     }
-    vga_print(&buf[i]);
+    hal_console_print(&buf[i]);
 }
 
 /* ── Memory ──────────────────────────────────────────── */
-// Memory map from Multiboot2 — filled in kernel.c
-// and stored here for hal_mem_get_map to return
+
 static hal_mem_region_t mem_map[64];
 static uint32_t         mem_map_count = 0;
 
@@ -46,6 +108,7 @@ uint32_t hal_mem_get_map(hal_mem_region_t* out, uint32_t max) {
 }
 
 /* ── CPU ─────────────────────────────────────────────── */
+
 void hal_cpu_halt(void) {
     while (1) __asm__ volatile ("hlt");
 }
@@ -59,13 +122,14 @@ void hal_cpu_enable_interrupts(void) {
 }
 
 /* ── Arch init ───────────────────────────────────────── */
+
 void hal_arch_init(uint64_t boot_magic, uint64_t boot_addr) {
     if (boot_magic != MULTIBOOT2_MAGIC)
         hal_panic("Multiboot2 magic is invalid");
 
-    vga_print("Multiboot2 OK @ ");
-    vga_print_hex(boot_addr);
-    vga_print("\n");
+    hal_console_print("Multiboot2 OK @ ");
+    hal_console_print_hex(boot_addr);
+    hal_console_print("\n");
 
     mb2_info_t *info = (mb2_info_t *)boot_addr;
     mb2_tag_t  *tag  = (mb2_tag_t *)((uint8_t *)info + 8);
@@ -104,19 +168,23 @@ void hal_arch_init(uint64_t boot_magic, uint64_t boot_addr) {
 }
 
 /* ── Physical memory allocator ───────────────────────── */
+
 void      hal_mem_init(void)                             { pmm_init(); }
 uintptr_t hal_mem_alloc_pages(uint32_t n)                { return pmm_alloc_pages(n); }
 void      hal_mem_free_pages(uintptr_t addr, uint32_t n) { pmm_free_pages(addr, n); }
 
 /* ── Interrupts ──────────────────────────────────────── */
+
 void hal_idt_init(void) { idt_init(); }
 
 /* ── Panic ───────────────────────────────────────────── */
+
 void hal_panic(const char* msg) {
     hal_cpu_disable_interrupts();
-    vga_set_color(VGA_WHITE, VGA_RED);
-    vga_print("\n\n  KERNEL PANIC: ");
-    vga_print(msg);
-    vga_print("  \n");
+    if (active_console == HAL_CONSOLE_VGA)
+        vga_set_color(VGA_WHITE, VGA_RED);
+    hal_console_print("\n\n  KERNEL PANIC: ");
+    hal_console_print(msg);
+    hal_console_print("  \n");
     hal_cpu_halt();
 }

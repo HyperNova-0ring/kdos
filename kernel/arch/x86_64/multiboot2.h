@@ -24,6 +24,13 @@ typedef struct {
     uint32_t size;
 } __attribute__((packed)) mb2_tag_t;
 
+/* Kernel command-line tag */
+typedef struct {
+    uint32_t type;           /* = 1 */
+    uint32_t size;
+    char     string[];       /* null-terminated cmdline */
+} __attribute__((packed)) mb2_tag_cmdline_t;
+
 /* Module tag (a module loaded by GRUB) */
 typedef struct {
     uint32_t type;          // = 3
