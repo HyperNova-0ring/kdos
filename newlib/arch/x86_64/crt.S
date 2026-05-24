@@ -1,66 +1,59 @@
 /*
- * crt.S — x86_64 module CRT startup.
+ * crt.S — x86_64 CRT startup for KDOS ELF programs.
  *
- * The kernel calls: _module_entry(const kst_t* kst)
- *   kst arrives in %rdi per the SysV x86_64 ABI.
+ * The ELF loader calls _prog_entry(const kst_t* kst),
+ * with kst in %rdi per the SysV x86_64 ABI.
  *
- * This stub:
- *   1. Saves kst (%rdi will be clobbered by BSS zeroing).
- *   2. Zeros the BSS region so newlib's internal globals start clean.
- *   3. Stores kst in _kst (used by the newlib hooks in newlib.c).
- *   4. Aligns the stack to the 16-byte SysV requirement.
- *   5. Calls int main(int argc, char** argv) with argc=0, argv=NULL.
- *   6. Calls _exit() with main's return value — never returns.
+ * Startup sequence:
+ *   1. Save kst (%rdi is clobbered by BSS zeroing).
+ *   2. Zero BSS so globals start clean.
+ *   3. Store kst in _kst (used by the newlib KST hooks in newlib.c).
+ *   4. Init _impure_ptr -> &_impure_data (newlib reentrant state).
+ *   5. Align stack to the 16-byte SysV requirement.
+ *   6. Call main(0, NULL).
+ *   7. Call _exit(return_value) — never returns.
  */
 
-    .extern _kst            /* const kst_t* — defined in newlib.c */
-    .extern _impure_ptr     /* struct _reent* — defined in newlib.c */
-    .extern _impure_data    /* struct _reent  — defined in newlib.c */
-    .extern main            /* int main(int, char**) — defined by the module */
-    .extern _exit           /* void _exit(int) — defined in newlib.c */
-    .extern __bss_start     /* linker symbol: start of BSS */
-    .extern __bss_end       /* linker symbol: end of BSS   */
+    .extern _kst            /* const kst_t* — defined in newlib.c         */
+    .extern _impure_ptr     /* struct _reent* — provided by libc.a        */
+    .extern _impure_data    /* struct _reent  — provided by libc.a        */
+    .extern main
+    .extern _exit
+    .extern __bss_start
+    .extern __bss_end
 
     .section .text.entry
-    .global _module_entry
-    .type   _module_entry, @function
-_module_entry:
-    /* save kst — %rdi is clobbered by rep stosb below */
-    pushq   %rdi
+    .global _prog_entry
+    .type   _prog_entry, @function
+_prog_entry:
+    pushq   %rdi                        /* save kst before BSS zero clobbers rdi */
 
-    /* zero BSS so newlib's internal globals (and _kst itself) start at 0 */
     leaq    __bss_start(%rip), %rdi
     leaq    __bss_end(%rip),   %rax
-    subq    %rdi, %rax          /* rax = BSS size */
+    subq    %rdi, %rax                  /* rax = BSS size */
     jz      .Lbss_done
     movq    %rax, %rcx
     xorl    %eax, %eax
-    rep     stosb               /* memset(bss_start, 0, bss_size) */
+    rep     stosb
 .Lbss_done:
 
-    /* restore kst and store it in the now-zeroed _kst global */
-    popq    %rdi
+    popq    %rdi                        /* restore kst */
     leaq    _kst(%rip), %rax
-    movq    %rdi, (%rax)
+    movq    %rdi, (%rax)               /* _kst = kst */
 
-    /* fix _impure_ptr: point it to the actual runtime address of _impure_data */
     leaq    _impure_data(%rip), %rax
     leaq    _impure_ptr(%rip),  %rcx
-    movq    %rax, (%rcx)
+    movq    %rax, (%rcx)               /* _impure_ptr = &_impure_data */
 
-    /* align stack to 16 bytes before any call */
-    andq    $-16, %rsp
+    andq    $-16, %rsp                  /* 16-byte stack align */
 
-    /* call main(0, NULL) */
-    xorl    %edi, %edi          /* argc = 0   */
-    xorl    %esi, %esi          /* argv = NULL */
+    xorl    %edi, %edi                  /* argc = 0   */
+    xorl    %esi, %esi                  /* argv = NULL */
     call    main
 
-    /* tail: exit with main's return value */
     movl    %eax, %edi
     call    _exit
 
-    /* unreachable safety halt */
 .Lhalt:
     hlt
     jmp     .Lhalt

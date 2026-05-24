@@ -1,47 +1,61 @@
 # KDOS Kernel Documentation
 
-The kernel is the core of KDOS. It handles boot, hardware abstraction, physical memory management, interrupt handling, the heap, and the module loading/dispatch system.
+The kernel is the core of KDOS. It handles boot, hardware abstraction, physical memory, interrupt handling, the heap, the neutral ELF loader, and the module system.
 
 ## Directory Structure
 
 ```
 kernel/
 ├── kernel.c                    — Entry point: kernel_main()
-├── hal.h                       — Hardware Abstraction Layer public interface
-├── module_abi.h                — KST and module binary contract (shared with modules)
-├── modules.h / modules.c       — Module registry and dispatcher
+├── hal.h                       — HAL public interface (architecture-neutral)
+├── module_abi.h                — KST and module ABI contract (shared with modules)
+├── modules.h / modules.c       — Module registry, dispatcher, and static KST
 ├── heap.h / heap.c             — Kernel heap (bump allocator)
+├── elf.h / elf.c               — Neutral, portable ELF64 loader
 ├── Makefile
 ├── modules/
-│   └── hello/
-│       ├── main.c              — Minimal example module
-│       └── module.ld           — Module linker script
+│   └── hello/                  — Minimal example module
 └── arch/
     └── x86_64/
         ├── boot.S              — Multiboot2 header, 32→64 transition, GDT, paging
         ├── hal.c               — HAL implementation for x86_64
-        ├── vga.h / vga.c       — BIOS VGA text-mode driver (80×25)
-        ├── idt.h / idt.c       — Interrupt Descriptor Table (IDT) setup
+        ├── vga.h / vga.c       — VGA text-mode driver (80×25)
+        ├── serial.h / serial.c — Serial driver (COM1) for alternate console
+        ├── idt.h / idt.c       — IDT + TSS64 (IST1 for #DF)
         ├── isr.S               — 32 CPU exception ISR stubs
         ├── pmm.h / pmm.c       — Physical Memory Manager (bitmap allocator)
+        ├── elf_arch.h          — x86_64-specific ELF constants
         ├── multiboot2.h        — Multiboot2 tag structures
         ├── link.ld             — Kernel linker script
         └── modules/debug/
-            └── exception_test/ — Debug module: fires CPU exceptions (DEBUG=1 only)
+            └── exception_test/ — Debug module (DEBUG=1 only)
 ```
+
+---
+
+## Two Kernel Layers
+
+The kernel code is split into two strict layers:
+
+| Layer | Files | Rule |
+|-------|-------|------|
+| **Neutral** | `kernel/*.c`, `kernel/*.h` | Only includes `hal.h`. Portable across architectures. |
+| **Arch-specific** | `kernel/arch/{arch}/` | Implements the HAL and provides `elf_arch.h`. |
+
+`kernel/elf.c` includes `elf_arch.h` via `-I$(ARCH_DIR)` in the Makefile. This keeps the loader neutral without hardcoding architecture constants.
+
+---
 
 ## Build
 
 ```bash
 # From repo root:
-make              # builds kernel ELF + all modules
-make DEBUG=1      # includes exception_test module + -D__DEBUG__
+make              # kernel ELF + all modules
+make DEBUG=1      # includes exception_test + -D__DEBUG__
 
 # From kernel/ directly:
 make -C kernel ARCH=x86_64
 ```
-
-Output: `kernel/build/kernel-x86_64.elf` + `kernel/build/modules/*.bin`
 
 ### CFLAGS
 
@@ -50,7 +64,7 @@ Output: `kernel/build/kernel-x86_64.elf` + `kernel/build/modules/*.bin`
 -mno-sse -mno-sse2 -mno-mmx -I<arch_dir> -I. -O2
 ```
 
-Module-specific extra flags: `-falign-functions=1 -falign-loops=1 -falign-jumps=1 -fPIC`
+Extra flags for modules: `-falign-functions=1 -falign-loops=1 -falign-jumps=1 -fPIC`
 
 ---
 
@@ -61,142 +75,122 @@ GRUB loads the kernel ELF in 32-bit protected mode and jumps to `_start`.
 ### 32-bit setup
 
 1. **Stack**: 16 KB static stack in BSS.
-2. **Multiboot2 validation**: checks `eax == 0x36D76289`; hangs on mismatch.
+2. **Multiboot2 validation**: checks `eax == 0x36D76289`; `hlt` loop on mismatch.
 3. **BSS zero**: `rep stosl` from `bss_start` to `bss_end`.
 4. **Page tables** (`setup_page_tables`):
-   - PML4[0] → PDPT (present + writable)
-   - PDPT[0] → PD (present + writable)
-   - PD[0..63] → 64 × 2 MB huge pages with PS bit (identity maps 0–128 MB)
-5. **PAE**: set bit 5 of CR4.
-6. **CR3**: load physical address of PML4.
-7. **Long Mode**: set bit 8 in EFER MSR (0xC0000080).
-8. **Paging**: set bit 31 in CR0.
-9. **GDT**: load 64-bit GDT (null, code 0x08, data 0x10).
-10. **Far jump**: `ljmp $0x08, $long_mode_entry` — switches to 64-bit code segment.
+   - PML4[0] → PDPT → PD with 64 × 2 MB huge pages (identity maps 0–128 MB).
+5. **PAE** (CR4 bit 5), **CR3** (PML4), **Long Mode** (EFER bit 8), **Paging** (CR0 bit 31).
+6. **64-bit GDT**: null + code (0x08) + data (0x10).
+7. **Far jump**: `ljmp $0x08, $long_mode_entry`.
 
 ### 64-bit entry (`long_mode_entry`)
 
-Sets all data segment registers to 0x10, loads boot arguments into `rdi`/`rsi`, and calls `kernel_main(boot_magic, boot_addr)`. On return: `cli` + `hlt` loop.
+Sets data segment registers to 0x10, loads boot arguments into `rdi`/`rsi`, calls `kernel_main`. On return: `cli` + `hlt` loop.
 
 ---
 
-## Hardware Abstraction Layer — `hal.h` / `arch/x86_64/hal.c`
+## HAL — `hal.h` / `arch/x86_64/hal.c`
 
-`hal.h` defines the architecture-neutral interface. `hal.c` implements it for x86_64. The kernel core (`kernel.c`, `modules.c`, `heap.c`) only includes `hal.h` — it never references arch-specific files directly.
+`hal.h` defines the architecture-neutral interface. The portable kernel core only includes `hal.h`.
 
 ### Console API
 
-| Function                           | Description                     |
-|------------------------------------|---------------------------------|
-| `hal_console_init()`               | Initialize VGA text mode        |
-| `hal_console_putchar(char c)`      | Write one character             |
-| `hal_console_print(const char*)`   | Write a string                  |
-| `hal_console_print_hex(uintptr_t)` | Print 64-bit value as 0xXXX...  |
-| `hal_console_print_dec(size_t)`    | Print decimal number            |
-| `hal_console_clear()`              | Clear screen                    |
+| Function | Description |
+|----------|-------------|
+| `hal_console_init(type)` | Initialize VGA or Serial based on `type` |
+| `hal_console_putchar(c)` | Write one character |
+| `hal_console_print(str)` | Write a string |
+| `hal_console_print_hex(uint64_t)` | Print `0xXXXXXXXXXXXXXXXX` |
+| `hal_console_print_dec(uint64_t)` | Print decimal number |
+| `hal_console_clear()` | Clear screen |
+| `hal_console_getchar()` | Read a character (-1 if no input) |
+| `hal_console_panic_color()` | Set panic color on VGA (red); no-op on serial |
 
 ### Memory API
 
 ```c
-typedef struct {
-    uint64_t base;
-    uint64_t length;
-    uint32_t type;   // 1 = usable, 2+ = reserved
-} hal_mem_region_t;
-
-void     hal_mem_set_map(hal_mem_region_t* map, uint32_t count);
-uint32_t hal_mem_get_map(hal_mem_region_t* out, uint32_t max);
-void     hal_mem_init(void);
-uintptr_t hal_mem_alloc_pages(uint32_t n);   // returns phys addr, 0 = OOM
+void      hal_mem_set_map(hal_mem_region_t* map, uint32_t count);
+uint32_t  hal_mem_get_map(hal_mem_region_t* out, uint32_t max);
+void      hal_mem_init(void);
+uintptr_t hal_mem_alloc_pages(uint32_t n);   // 0 = OOM
 void      hal_mem_free_pages(uintptr_t addr, uint32_t n);
 ```
 
-### CPU API
+### CPU and Interrupt API
 
 ```c
 void hal_cpu_halt(void);
 void hal_cpu_disable_interrupts(void);
 void hal_cpu_enable_interrupts(void);
-```
-
-### Other
-
-```c
-void hal_arch_init(uint64_t boot_magic, uint64_t boot_addr);  // parse Multiboot2
+void hal_arch_init(uint64_t boot_magic, uint64_t boot_addr);
 void hal_idt_init(void);
-void hal_panic(const char* msg);  // disable interrupts, red screen, halt
+void hal_panic(const char* msg);
+
+// Program-level exception hook (see command_kern)
+void hal_set_exc_hook(void (*fn)(uint64_t vec, uint64_t rip, uint64_t err,
+                                  uint64_t* out_rip, uint64_t* out_rsp));
+void hal_clear_exc_hook(void);
 ```
 
 ---
 
 ## VGA Driver — `arch/x86_64/vga.c`
 
-BIOS VGA text mode: 80 columns × 25 rows at physical address `0xB8000`. Each cell is a 16-bit value: low byte = ASCII character, high byte = color (4-bit bg | 4-bit fg).
+BIOS VGA text mode: 80 × 25 columns at `0xB8000`. Each cell: ASCII byte (low) + color byte (high). Supports `\n`, `\r`, `\t`, line wrap, scroll.
 
-### Colors
+---
 
-16 colors defined in `vga_color` enum: `VGA_BLACK` (0) through `VGA_WHITE` (15).
+## Serial Driver — `arch/x86_64/serial.c`
 
-### API
-
-| Function                              | Description                               |
-|---------------------------------------|-------------------------------------------|
-| `vga_init()`                          | Initialize, set white-on-black, clear     |
-| `vga_clear()`                         | Fill all cells with spaces, reset cursor  |
-| `vga_putchar(char c)`                 | Write char; handles `\n`, `\r`, `\t`, wrap, scroll |
-| `vga_print(const char* str)`          | Write string                              |
-| `vga_print_hex(uint64_t)`             | Print `0xXXXXXXXXXXXXXXXX`               |
-| `vga_set_color(vga_color fg, bg)`     | Set foreground + background color         |
-
-Scrolling: when `cursor_row >= 25`, copies row N to row N-1 for all rows, clears row 24.
+COM1 (0x3F8) at 115200 baud, 8N1. The serial console activates when the GRUB cmdline contains `console=serial`. The active console (VGA or serial) is selected in `hal_console_init` and applies to all `hal_console_*` functions.
 
 ---
 
 ## Physical Memory Manager — `arch/x86_64/pmm.c`
 
-Bitmap-based physical page frame allocator.
+Bitmap-based physical frame allocator (1 bit / 4 KB page).
 
-### Constants
-
-- `PAGE_SIZE = 4096`
-- `MAX_FRAMES = 512 MB / 4 KB = 131072` (16 KB bitmap in BSS)
-
-### Initialization (`pmm_init`)
-
-1. Start: mark all frames as used (`0xFF`).
-2. Determine `total_frames` from the highest address in a usable Multiboot2 memory region.
-3. Mark every page-aligned address inside usable regions as free.
-4. Re-mark `[0, kernel_end)` as used — protects BIOS area, kernel code/data/BSS.
-
-### Allocation (`pmm_alloc_pages`)
-
-First-fit search: finds `n` contiguous free frames, marks them used, returns their base physical address. Returns 0 on OOM.
-
-### Deallocation (`pmm_free_pages`)
-
-Marks `n` frames starting at `addr` as free.
+- `MAX_FRAMES = 131072` (512 MB / 4 KB, 16 KB bitmap in BSS).
+- `pmm_init`: marks all frames used, frees usable Multiboot2 regions, re-marks `[0, kernel_end)` as used.
+- `pmm_alloc_pages(n)`: first-fit, returns base physical address or 0.
+- `pmm_free_pages(addr, n)`: bounds-checked (`i >= MAX_FRAMES` → stop).
 
 ---
 
 ## Kernel Heap — `heap.c`
 
-A bump (linear) allocator backed by the PMM, implementing the `sbrk` interface.
-
-### Constants
-
-- `HEAP_PAGES = 1024` → **4 MB** heap
-
-### Initialization (`heap_init`)
-
-Rounds `base` (= `&kernel_end`) up to a page boundary, then calls `hal_mem_alloc_pages(1024)`. Panics if the physical address returned does not equal `heap_base` (would indicate identity mapping is broken).
+Bump allocator backed by the PMM. `HEAP_PAGES = 1024` → **4 MB**.
 
 ### `heap_sbrk(intptr_t incr)`
 
-- Advances the bump pointer by `incr` bytes.
-- Returns the old pointer (POSIX sbrk semantics).
-- Returns `(void*)-1` if `incr <= 0` or would exceed `heap_limit`.
+- `incr == 0` → returns current break (newlib `malloc` probes this way).
+- `incr > 0` → advances bump pointer, returns old pointer.
+- `incr < 0` or overflow → returns `(void*)-1`.
 
-This is wired into `kst->mem.sbrk`, so `malloc` in newlib-linked modules works automatically.
+Wired into `kst->mem.sbrk`, so `malloc` in newlib-linked programs works automatically.
+
+---
+
+## ELF Loader — `elf.c` / `elf.h` / `arch/x86_64/elf_arch.h`
+
+The ELF loader is part of the neutral kernel layer. It is portable: architecture-dependent constants come from `elf_arch.h`, included automatically via `-I$(ARCH_DIR)`.
+
+### `arch/x86_64/elf_arch.h`
+
+```c
+#define ELF_CLASS    2     // ELFCLASS64
+#define ELF_MACHINE  62    // EM_X86_64
+#define PROG_LOAD_MIN  0x100000UL    // 1 MB — above kernel
+#define PROG_LOAD_MAX  0x8000000UL   // 128 MB — identity map limit
+```
+
+### `uintptr_t elf_load(const void* data, size_t size)`
+
+Validates: ELF magic, `ELF_CLASS`, `ET_EXEC`, `ELF_MACHINE`, `e_phoff`, `e_phentsize`.  
+For each `PT_LOAD` segment: overflow-safe bounds checks (`p_memsz > LOAD_VADDR_MAX - p_vaddr`), copies `p_filesz` bytes to `p_vaddr`, zeroes BSS padding.  
+Returns `e_entry` if at least one segment was loaded, 0 on error.
+
+Exposed in the KST as `kst->sys.elf_load`.
 
 ---
 
@@ -204,75 +198,39 @@ This is wired into `kst->mem.sbrk`, so `malloc` in newlib-linked modules works a
 
 ### IDT Structure
 
-256 entries, each an 8-byte `idt_entry_t` with a split 64-bit handler offset, selector, and type attributes. The IDT pointer is loaded via `lidt`.
+256 `idt_entry_t` entries (split 64-bit offset, selector, type attributes). Only vectors 0–31 (CPU exceptions) are installed, all as `IDT_INTERRUPT_GATE` (0x8E: P=1, DPL=0, type=1110).
 
-Only vectors 0–31 (CPU exceptions) are installed. All use `IDT_INTERRUPT_GATE` (0x8E: P=1, DPL=0, type=1110), meaning interrupts are automatically disabled on entry.
+### TSS64 and IST1 (for #DF)
 
-### ISR Stubs (`isr.S`)
+`idt_init` sets up a static `tss64_t` with a dedicated 4 KB IST1 stack. Extends the GDT to 5 entries (null/code/data/TSS_low/TSS_high), reloads with `lgdt`, loads the Task Register with `ltr 0x18`. IDT vector 8 (#DF) descriptor has `ist = 1` → uses the IST1 stack even if the kernel stack has overflowed.
 
-Two macros keep stubs uniform:
+### Exception Hook
 
-- `ISR_NOERR num` — pushes dummy error code `0`, then the vector number, jumps to `isr_common_stub`.
-- `ISR_ERR num` — the CPU already pushed an error code; just pushes the vector number, jumps to `isr_common_stub`.
-
-Vectors with error codes: 8 (#DF), 10 (#TS), 11 (#NP), 12 (#SS), 13 (#GP), 14 (#PF), 17 (#AC), 30 (#SX).
-
-### Common Stub
-
-`isr_common_stub` saves all 15 general-purpose registers (`rax`–`r15`), passes `rsp` (which now points to a complete `interrupt_frame_t`) as the first argument, and calls `exception_handler`.
-
-### `interrupt_frame_t`
-
-```c
-typedef struct {
-    uint64_t r15..r8, rdi, rsi, rbp, rdx, rcx, rbx, rax;
-    uint64_t vector;
-    uint64_t error_code;
-    // pushed by CPU:
-    uint64_t rip, cs, rflags, rsp, ss;
-} interrupt_frame_t;
-```
+The exception handler checks for a registered user hook (via `hal_set_exc_hook`). If one exists: fills `*out_rip`/`*out_rsp` with the recovery address and IRETQ redirects there. The hook is auto-cleared on entry. Used by `command_kern` to catch ELF program exceptions without crashing the shell.
 
 ### Exception Handler
 
-Displays exception name (from a 32-entry string table), RIP, CS, RSP, SS, RFLAGS, error code (if nonzero), RAX, RBX, RCX, RDX — all on a red background. Then halts.
+Calls `hal_console_panic_color()` (red on VGA, no-op on serial) and `hal_console_*` to display the exception name, RIP, CS, RSP, RFLAGS, error code, and registers. If there is a hook: calls it and IRETs to the recovery address. If no hook: halts.
 
 ---
 
-## Module System — `modules.h` / `modules.c`
+## Module System — `modules.c`
 
-### Data Structures
+### `modules_register(start, end, cmdline)`
 
-```c
-typedef struct {
-    uintptr_t      start;       // physical start address
-    uintptr_t      end;         // physical end address
-    char           cmdline[64]; // GRUB module command line
-    module_state_t state;       // ABSENT / LOADED / RUNNING / FAILED
-    module_header_t* header;    // pointer to header at start, or NULL
-} module_t;
-
-typedef struct {
-    module_t modules[MAX_MODULES]; // MAX_MODULES = 16
-    uint32_t count;
-} module_list_t;
-```
-
-### Registration (`modules_register`)
-
-Called from `hal_arch_init` for each `MB2_TAG_MODULE` found in the Multiboot2 info. Validates the `MODULE_MAGIC` at `start`; on mismatch sets state to `FAILED` and prints a warning.
+Called from `hal_arch_init` for each `MB2_TAG_MODULE`. Validates `MODULE_MAGIC` at `start`; on mismatch sets state to `FAILED`.
 
 ### `modules_run_all()`
 
-Iterates all modules with state `LOADED` and a valid header, skipping entry shells (`COMMAND.KERN`, `command.com`). For each: prints name + version, then calls `entry(&kernel_kst)`.
+Runs all modules with state `LOADED` and a valid header, excluding entry shells (`COMMAND.KERN`, `command.com`).
 
 ### `modules_launch_entry()`
 
-Tries to find `COMMAND.KERN` first, then `command.com`. Launches the first match. If neither is found, prints an error message and returns (kernel then panics).
+Finds `COMMAND.KERN` or `command.com` and hands execution over by calling `entry(&kernel_kst)`.
 
-### Kernel Services Table — `kernel_kst`
+### Static KST — `kernel_kst`
 
-A static `kst_t` defined in `modules.c`. Populated at compile time with HAL function pointers and stub implementations.
+Static `kst_t` defined in `modules.c`. Populated at compile time with HAL function pointers and syscall implementations. The address of `kernel_kst` never changes: `kst->sys.elf_load` is as simple as a function pointer.
 
 ---
 
@@ -280,7 +238,25 @@ A static `kst_t` defined in `modules.c`. Populated at compile time with HAL func
 
 Shared by the kernel and all modules.
 
-### `module_header_t`
+### KST v2
+
+```c
+#define KST_VERSION 2
+
+typedef struct {
+    uint32_t version;
+    struct { print, print_hex, print_dec, putchar, clear, getchar } console;
+    struct { sbrk }                                                  mem;
+    struct { write, read, open, close, isatty, lseek, fstat }       io;
+    struct { exit, panic, getpid,
+             set_exc_hook, clear_exc_hook,
+             elf_load }                                              sys;
+} kst_t;
+```
+
+`elf_load` was added in v2. It lets any module load ELF programs without implementing its own loader.
+
+### `module_header_t` (56 bytes)
 
 ```c
 typedef struct {
@@ -291,84 +267,23 @@ typedef struct {
 } __attribute__((packed)) module_header_t;
 ```
 
-Total size: 56 bytes. Placed at offset 0 of every module binary via the `.module_header` section.
-
 ### `MODULE_HEADER(name, version)` Macro
 
-Embeds the header at file scope:
-
-```c
-MODULE_HEADER("hello", "0.1");
-```
-
-Uses `__attribute__((section(".module_header"), used))` to prevent dead-code elimination.
-
-### `module_entry_fn`
-
-```c
-typedef void (*module_entry_fn)(const kst_t* kst);
-```
-
-The entry function always resides at `module_start + sizeof(module_header_t)`.
+Embeds the header at offset 0 of the flat binary via the `.module_header` section.
 
 ---
 
-## Example Module — `modules/hello/`
-
-```c
-#include "../../module_abi.h"
-
-MODULE_HEADER("hello", "0.1");
-
-__attribute__((section(".text.entry")))
-void module_main(const kst_t* kst) {
-    kst->console.print("Hello World!\n");
-}
-```
-
-Uses `module_abi.h` directly (no CRT or newlib). The `__attribute__((section(".text.entry")))` ensures the function is the first in `.text` after the header — directly callable at `start + 56`.
-
-### Module Linker Script (`modules/hello/module.ld`)
-
-```
-. = 0;
-.module_header : { KEEP(*(.module_header)) }
-.text ALIGN(1) : { *(.text.entry) *(.text .text.*) }
-.rodata, .data, .got, .got.plt, .bss (all ALIGN(1))
-/DISCARD/: .eh_frame, .comment
-```
-
----
-
-## Debug Module — `arch/x86_64/modules/debug/exception_test/`
-
-Only included when `DEBUG=1`. Tests the IDT by deliberately triggering four exception types:
-
-| ID | Exception | Method                    |
-|----|-----------|---------------------------|
-| 0  | #DE       | Integer divide by zero    |
-| 1  | #UD       | `ud2` instruction         |
-| 2  | #PF       | Null pointer dereference  |
-| 3  | #GP       | `rdmsr` with invalid index |
-
-The active test is selected at compile time via `#define TEST_EXCEPTION N`.
-
----
-
-## Linker Script — `arch/x86_64/link.ld`
+## Kernel Linker Script — `arch/x86_64/link.ld`
 
 ```
 ENTRY(_start)
+. = 1M           — load address: 1 MB physical (above BIOS data area)
 
-. = 1M    (load address: 1 MB physical)
-
-.multiboot  ALIGN(8)  — Multiboot2 header (GRUB searches first 32 KB)
-.text       ALIGN(4K) — Code
+.multiboot  ALIGN(8)   — Multiboot2 header
+.text       ALIGN(4K)
 .rodata     ALIGN(4K)
 .data       ALIGN(4K)
-.bss        ALIGN(4K) — bss_start … bss_end symbols exported to boot.S
+.bss        ALIGN(4K)  — bss_start … bss_end exported to boot.S
 
-kernel_end = ALIGN(4K)  — exported; used by heap.c and pmm.c
+kernel_end = ALIGN(4K) — exported to heap.c and pmm.c
 ```
-
-The kernel loads at the 1 MB mark, which is the traditional safe load address above the BIOS data area.

@@ -48,6 +48,7 @@ run: iso
 	    -cdrom $(OUTDIR)/kernel-$(ARCH).iso \
 	    -m 128M \
 	    -serial stdio \
+	    -serial tcp::4444,server,nowait \
 	    -no-reboot \
 	    2>/dev/null
 
@@ -81,7 +82,7 @@ _copy-newlib: _build-newlib
 	$(Q)mkdir -p $(OUTDIR)
 	$(Q)cp $(NEWLIB_DIR)/build/$(ARCH)/crt.o         $(OUTDIR)/
 	$(Q)cp $(NEWLIB_DIR)/build/$(ARCH)/libnewlib.a   $(OUTDIR)/
-	$(Q)cp $(NEWLIB_DIR)/build/$(ARCH)/module.ld     $(OUTDIR)/
+	$(Q)cp $(NEWLIB_DIR)/build/$(ARCH)/prog.ld     $(OUTDIR)/
 	@echo "[COPY] newlib → $(OUTDIR)/"
 
 _copy-command_kern: _build-command_kern

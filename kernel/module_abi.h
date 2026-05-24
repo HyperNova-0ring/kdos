@@ -5,18 +5,10 @@
 #include <stddef.h>
 
 #define MODULE_MAGIC  0x444F534D   /* "DOSM" */
-#define KST_VERSION   1
+#define KST_VERSION   2
 
-/*
- * Kernel Services Table — contract between the kernel and any module or
- * program running at ring 0. Replaces syscalls; passed by pointer to
- * every module entry point.
- *
- * Fields marked as stubs return safe values until the underlying
- * subsystem is implemented.
- */
 typedef struct {
-    uint32_t version;               /* KST_VERSION */
+    uint32_t version;
 
     /* ── Console ─────────────────────────────────────────── */
     struct {
@@ -25,15 +17,15 @@ typedef struct {
         void (*print_dec)(size_t val);
         void (*putchar)  (char c);
         void (*clear)    (void);
-        int  (*getchar)  (void);    /* stub: -1 until keyboard driver is ready */
+        int  (*getchar)  (void);
     } console;
 
     /* ── Memory ──────────────────────────────────────────── */
     struct {
-        void* (*sbrk)(intptr_t incr);   /* stub: (void*)-1 until PMM */
+        void* (*sbrk)(intptr_t incr);
     } mem;
 
-    /* ── I/O (newlib stubs: _read/_write/_open/_close ...) ── */
+    /* ── I/O ─────────────────────────────────────────────── */
     struct {
         int (*write) (int fd, const void* buf, size_t len);
         int (*read)  (int fd, void* buf, size_t len);
@@ -41,23 +33,28 @@ typedef struct {
         int (*close) (int fd);
         int (*isatty)(int fd);
         int (*lseek) (int fd, int offset, int whence);
-        int (*fstat) (int fd, void* st);    /* struct stat* — type TBD */
+        int (*fstat) (int fd, void* st);
     } io;
 
-    /* ── System ─────────────────────────────────────────── */
+    /* ── System ──────────────────────────────────────────── */
     struct {
-        void (*exit) (int status);
-        void (*panic)(const char* msg);
-        int  (*getpid)(void);
+        void (*exit)          (int status);
+        void (*panic)         (const char* msg);
+        int  (*getpid)        (void);
+        /* Program-level exception hook. fn fills *out_rip/*out_rsp with
+           the recovery address; IRETQ redirects there. Auto-cleared on entry. */
+        void (*set_exc_hook)  (void (*fn)(uint64_t vec, uint64_t rip, uint64_t err,
+                                          uint64_t* out_rip, uint64_t* out_rsp));
+        void (*clear_exc_hook)(void);
+        /* ELF loader — load a standard ELF64 executable into identity-mapped
+           memory and return its entry-point address, or 0 on error.
+           Exposed here so any module can launch programs without embedding
+           its own loader. */
+        uintptr_t (*elf_load) (const void* data, size_t size);
     } sys;
 
 } kst_t;
 
-/*
- * MODULE_HEADER — embed the module header into the binary.
- * Call once at file scope in the module's main source file.
- * __attribute__((used)) prevents -O2 from discarding the static const.
- */
 #define MODULE_HEADER(name_str, version_str)                            \
     __attribute__((section(".module_header"), used))                    \
     static const module_header_t _module_hdr = {                       \
@@ -67,10 +64,8 @@ typedef struct {
         .reserved = 0,                                                  \
     }
 
-/* ── Module binary layout ────────────────────────────────── */
-
 typedef struct {
-    uint32_t magic;         /* MODULE_MAGIC */
+    uint32_t magic;
     char     name[32];
     char     version[16];
     uint32_t reserved;

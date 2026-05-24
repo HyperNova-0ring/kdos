@@ -19,7 +19,7 @@ CFLAGS = -ffreestanding -mno-red-zone -fno-stack-protector \
          -I../kernel -I. \
          -isystem $(NEWLIB)/include
 
-ARTIFACTS = $(OUTDIR)/crt.o $(OUTDIR)/libnewlib.a $(OUTDIR)/module.ld
+ARTIFACTS = $(OUTDIR)/crt.o $(OUTDIR)/libnewlib.a $(OUTDIR)/prog.ld
 
 # ─── Rules ──────────────────────────────────────────────────────
 
@@ -39,7 +39,7 @@ $(OUTDIR)/newlib.o: newlib.c
 	$(Q)$(CC) $(CFLAGS) -c $< -o $@
 	@echo "[CC]  $<"
 
-$(OUTDIR)/module.ld: arch/$(ARCH)/module.ld
+$(OUTDIR)/prog.ld: arch/$(ARCH)/prog.ld
 	$(Q)mkdir -p $(OUTDIR)
 	$(Q)cp $< $@
 	@echo "[CP]  $@"

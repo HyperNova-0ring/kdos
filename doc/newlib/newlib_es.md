@@ -1,32 +1,33 @@
 # KDOS newlib — Documentación
 
-`newlib/` proporciona un entorno de runtime C (CRT) y un glue de syscalls libc que permite a los módulos usar funciones de la biblioteca C estándar como `printf`, `malloc` y `exit`. Hace de puente entre la libc de newlib y la Kernel Services Table (KST) de KDOS.
+`newlib/` proporciona un entorno de runtime C (CRT) y un glue de syscalls libc que permite escribir programas ELF para KDOS en C estándar. Hace de puente entre la libc de newlib y la Kernel Services Table (KST) de KDOS.
 
 ## Propósito
 
-Sin esta capa, un módulo debe llamar directamente a las funciones KST (`kst->console.print(...)`, etc.). Con newlib enlazado, el módulo puede escribir C estándar:
+Los programas KDOS son **ELF64 estándar** (`ET_EXEC`). No son módulos flat binary — no llevan `module_header_t`. Son compilados y enlazados como ejecutables normales y transferidos al sistema en tiempo de ejecución mediante `command_kern`. El CRT y el glue de newlib permiten escribir programas con `main`, `printf`, `malloc` y `exit`:
 
 ```c
 #include <stdio.h>
-#include <stdlib.h>
 
 int main(void) {
-    printf("¡Hola desde un módulo C estándar!\n");
+    printf("Hola desde KDOS!\n");
     return 0;
 }
 ```
+
+El kernel los carga mediante `kst->sys.elf_load` (el cargador ELF neutral) y llama al entry point `_prog_entry` del CRT.
 
 ## Estructura de Directorios
 
 ```
 newlib/
 ├── Makefile
-├── newlib.h              — Macro MODULE_DEFINE
+├── newlib.h              — Expone _kst (puntero KST para acceso directo)
 ├── newlib.c              — Stubs de syscall (write, read, sbrk, exit, ...)
 └── arch/
     └── x86_64/
-        ├── crt.S         — Startup CRT: _module_entry() → main()
-        └── module.ld     — Linker script para módulos con CRT
+        ├── crt.S         — Startup CRT: _prog_entry() → main()
+        └── prog.ld       — Linker script para programas ELF
 ```
 
 ## Build
@@ -37,13 +38,11 @@ make -C newlib ARCH=x86_64
 
 ### Salida
 
-| Artefacto                    | Descripción                                      |
-|------------------------------|--------------------------------------------------|
-| `build/x86_64/crt.o`         | Objeto de startup CRT                            |
-| `build/x86_64/libnewlib.a`   | Biblioteca estática de glue de syscalls          |
-| `build/x86_64/module.ld`     | Linker script de módulos (copia al build raíz)   |
-
-Estos son copiados a `build/x86_64/` por el Makefile raíz.
+| Artefacto                    | Descripción                                    |
+|------------------------------|------------------------------------------------|
+| `build/x86_64/crt.o`         | Objeto de startup CRT                          |
+| `build/x86_64/libnewlib.a`   | Biblioteca estática de glue de syscalls        |
+| `build/x86_64/prog.ld`       | Linker script para programas ELF               |
 
 ### CFLAGS
 
@@ -53,42 +52,28 @@ Estos son copiados a `build/x86_64/` por el Makefile raíz.
 -I../kernel -I. -isystem <newlib>/include
 ```
 
-`-fPIC` es requerido porque los módulos se cargan en direcciones físicas arbitrarias.  
-`-fvisibility=hidden` evita la exportación accidental de símbolos de la capa de glue.
+`-fPIC` porque los programas se cargan en direcciones físicas arbitrarias.  
+`-fvisibility=hidden` evita la exportación accidental de símbolos del glue.
 
 ### Requisito de Toolchain
 
-El sistema host debe tener instalado un compilador cruzado de newlib en `/usr/local/x86_64-elf/`. El Makefile lo referencia mediante `-isystem $(NEWLIB)/include` para incluir cabeceras y, implícitamente, para enlazar `libc.a` al construir un módulo completo.
+El host debe tener instalado el compilador cruzado de newlib en `/usr/local/x86_64-elf/`. El Makefile lo referencia mediante `-isystem $(NEWLIB)/include`.
 
 ---
 
 ## Startup CRT — `arch/x86_64/crt.S`
 
-El kernel llama a cada módulo como:
+El cargador ELF del kernel salta al entry point del programa (`_prog_entry`) con la KST en `%rdi` (ABI SysV).
 
-```c
-void _module_entry(const kst_t* kst);   // kst en %rdi (ABI SysV)
-```
+### Secuencia de arranque
 
-`crt.S` implementa `_module_entry` y realiza los siguientes pasos antes de llamar a `main`:
-
-### Paso a paso
-
-1. **Guardar `kst`** — `%rdi` será sobreescrito por el bucle de zeroing del BSS, por lo que se guarda en el stack.
-
-2. **Zero BSS** — Mediante `rep stosb` desde `__bss_start` hasta `__bss_end`. Esto es necesario porque los módulos son binarios crudos cargados en direcciones arbitrarias; su BSS no está pre-inicializado a cero por el SO.
-
-3. **Almacenar `kst` en `_kst`** — El global `_kst` de `newlib.c` (ahora en cero) se establece al puntero `kst` guardado, usando direccionamiento relativo a RIP.
-
-4. **Corregir `_impure_ptr`** — El modelo reentrante de newlib requiere que `_impure_ptr` apunte al struct `_impure_data` real. Como el módulo es PIC y tiene layout relativo a la dirección 0, este puntero se corrige en tiempo de ejecución.
-
-5. **Alineación del stack a 16 bytes** — `andq $-16, %rsp` satisface el requisito del ABI SysV AMD64 antes de cualquier instrucción `call`.
-
+1. **Guardar `kst`** — `%rdi` será sobreescrito por el zeroing del BSS; se guarda en el stack.
+2. **Zero BSS** — `rep stosb` desde `__bss_start` hasta `__bss_end` (RIP-relative). Obligatorio porque los segmentos ELF se copian tal cual; el BSS no viene pre-inicializado.
+3. **Almacenar `kst` en `_kst`** — El global `_kst` de `newlib.c` se establece al puntero guardado.
+4. **Corregir `_impure_ptr`** — El modelo reentrante de newlib requiere que `_impure_ptr` apunte a `_impure_data`. Se corrige en tiempo de ejecución con RIP-relative addressing.
+5. **Alineación del stack a 16 bytes** — `andq $-16, %rsp` para el ABI SysV AMD64.
 6. **Llamar `main(0, NULL)`** — `argc = 0`, `argv = NULL`.
-
-7. **Llamar `_exit(valor_retorno_main)`** — nunca retorna; se enruta a través de `kst->sys.exit`.
-
-### Halt de Seguridad
+7. **Llamar `_exit(valor_retorno)`** — enruta a través de `kst->sys.exit`; nunca retorna.
 
 Después de `_exit` hay un bucle `hlt` inalcanzable como medida defensiva.
 
@@ -96,27 +81,27 @@ Después de `_exit` hay un bucle `hlt` inalcanzable como medida defensiva.
 
 ## Glue de Syscalls — `newlib.c`
 
-Este archivo proporciona las implementaciones de syscalls específicas del SO que la libc de newlib espera. Newlib 4.x usa el modelo reentrante internamente (`_write_r`, `_read_r`, etc.) pero aún espera que la capa del SO defina los nombres sin prefijo.
+Proporciona las implementaciones de syscall específicas del SO que newlib espera.
 
 ### Estado Global
 
 ```c
-const kst_t* _kst;   // establecido por crt.S antes de llamar a main()
+const kst_t* _kst;   // establecido por crt.S antes de main()
 ```
 
-Todas las funciones comprueban si `_kst == NULL` y devuelven `ENOSYS` si se llaman antes de que la KST esté establecida.
+Accesible desde el programa mediante `#include "newlib.h"` para llamadas directas a la KST más allá de lo que ofrece la libc estándar.
 
 ### Funciones I/O
 
-| Función               | Respaldada por      | Notas                               |
-|-----------------------|---------------------|-------------------------------------|
-| `write(fd, buf, n)`   | `kst->io.write`     | fd 1/2 → VGA; otros devuelven EIO  |
-| `read(fd, buf, n)`    | `kst->io.read`      | Stub: devuelve EIO                 |
-| `open(path, ...)`     | `kst->io.open`      | Stub: devuelve ENOENT              |
-| `close(fd)`           | `kst->io.close`     | Stub: devuelve EBADF               |
-| `isatty(fd)`          | `kst->io.isatty`    | fd 0–2 devuelve 1                  |
-| `lseek(fd, ...)`      | `kst->io.lseek`     | Stub: devuelve ESPIPE              |
-| `fstat(fd, st)`       | `kst->io.fstat`     | Stub                               |
+| Función               | Respaldada por    | Notas                            |
+|-----------------------|-------------------|----------------------------------|
+| `write(fd, buf, n)`   | `kst->io.write`   | fd 1/2 → consola; otros → EIO   |
+| `read(fd, buf, n)`    | `kst->io.read`    | Stub: devuelve EIO               |
+| `open(path, ...)`     | `kst->io.open`    | Stub: devuelve ENOENT            |
+| `close(fd)`           | `kst->io.close`   | Stub: devuelve EBADF             |
+| `isatty(fd)`          | `kst->io.isatty`  | fd 0–2 devuelve 1                |
+| `lseek(fd, ...)`      | `kst->io.lseek`   | Stub: devuelve ESPIPE            |
+| `fstat(fd, st)`       | `kst->io.fstat`   | Stub                             |
 
 ### Memoria
 
@@ -124,62 +109,45 @@ Todas las funciones comprueban si `_kst == NULL` y devuelven `ENOSYS` si se llam
 void* sbrk(ptrdiff_t incr);   // → kst->mem.sbrk → heap_sbrk en el kernel
 ```
 
-Esto permite `malloc`/`free` en el módulo ya que el allocator de newlib usa `sbrk` internamente.
+Permite `malloc`/`free` ya que el allocator de newlib usa `sbrk` internamente. `sbrk(0)` devuelve el break actual (consulta de estado de heap por `malloc`).
 
 ### Proceso
 
 ```c
 int  getpid(void);           // → kst->sys.getpid (stub: 1)
-int  kill(int pid, int sig); // SIGABRT (6) → kst->sys.panic; otros → EINVAL
-void _exit(int status);      // → kst->sys.exit → kernel panic
+int  kill(int pid, int sig); // SIGABRT → kst->sys.panic; otros → EINVAL
+void _exit(int status);      // → kst->sys.exit
 ```
 
 ---
 
-## Macro de Header de Módulo — `newlib.h`
+## Linker Script de Programas — `arch/x86_64/prog.ld`
 
-```c
-#define MODULE_DEFINE(name_str, version_str)
+Usado al enlazar programas ELF para KDOS. Sin `module_header_t` — los programas son ELF estándar.
+
 ```
+ENTRY(_prog_entry)
+. = 0x2000000;          — dirección base: 32 MB (por encima del kernel y sus módulos)
 
-Incrusta un `module_header_t` en el ámbito de archivo usando `__attribute__((section(".module_header"), used))`. Usa esta macro en lugar de `MODULE_HEADER` de `module_abi.h` cuando compilas con el CRT.
-
-Ejemplo:
-
-```c
-MODULE_DEFINE("miapp", "1.0");
-
-int main(void) {
-    printf("¡Hola!\n");
-    return 0;
+.text   : { *(.text.entry) *(.text .text.*) }
+.rodata ALIGN(8) : { ... }
+.data   ALIGN(8) : { ... }
+.got    ALIGN(8) : { ... }
+.got.plt ALIGN(8): { ... }
+.bss    ALIGN(8) : {
+    __bss_start = .;
+    *(.bss .bss.*)
+    *(COMMON)
+    __bss_end = .;
 }
+/DISCARD/ : { .eh_frame .comment .note.* }
 ```
+
+La restricción crítica: `_prog_entry` de `crt.o` debe ser el primero en `.text`. El linker lo garantiza colocando `.text.entry` antes que `.text`.
 
 ---
 
-## Linker Script de Módulos — `arch/x86_64/module.ld`
-
-Usado al enlazar módulos con el CRT. Layout en el offset 0:
-
-```
-. = 0;
-.module_header          — Salida de la macro MODULE_DEFINE / MODULE_HEADER (56 bytes)
-.text ALIGN(1):
-    *(.text.entry)      — crt.o: _module_entry DEBE ser el PRIMERO en .text
-    *(.text .text.*)    — código del módulo
-.rodata ALIGN(1)
-.data   ALIGN(1)
-.got    ALIGN(1)        — requerido para PIC
-.got.plt ALIGN(1)
-.bss    ALIGN(1):       — símbolos __bss_start … __bss_end (usados por crt.S)
-/DISCARD/: .eh_frame, .comment, .note.*
-```
-
-La restricción crítica: `_module_entry` de `crt.o` debe estar en el offset `sizeof(module_header_t)` (56). El enlazador lo logra colocando `.text.entry` primero en `.text`, inmediatamente después de `.module_header`.
-
----
-
-## Cómo Compilar un Módulo con CRT + Newlib
+## Cómo Compilar un Programa
 
 ```bash
 x86_64-elf-gcc \
@@ -189,27 +157,29 @@ x86_64-elf-gcc \
     -isystem /usr/local/x86_64-elf/include \
     -c main.c -o main.o
 
-x86_64-elf-ld -T build/x86_64/module.ld -nostdlib \
+x86_64-elf-ld -T build/x86_64/prog.ld -nostdlib \
     build/x86_64/crt.o main.o build/x86_64/libnewlib.a \
     /usr/local/x86_64-elf/lib/libc.a \
-    -o mimodulo.elf
-
-x86_64-elf-objcopy -O binary mimodulo.elf mimodulo.bin
+    -o miprograma.elf
 ```
 
-El orden de enlazado importa: `crt.o` debe ir antes de `main.o` para que `_module_entry` quede primero en `.text.entry`.
+El programa resultante es un ELF64 estándar. Se transfiere al sistema mediante el protocolo KELF de `command_kern` (ver `doc/command_kern/`).
+
+El orden de enlazado importa: `crt.o` debe ir antes de `main.o`.
 
 ---
 
-## Relación con el Kernel
+## Relación con el Sistema
 
 ```
-Kernel
-  └─ modules_run_all() / modules_launch_entry()
-       └─ llama entry = module_start + 56  (= _module_entry en crt.o)
-            └─ crt.S: zeros BSS, establece _kst, corrige _impure_ptr, llama main()
-                 └─ main() del módulo usa printf/malloc/exit
-                      └─ libc newlib → write/sbrk/_exit en newlib.c
-                           └─ newlib.c → kst->io.write / kst->mem.sbrk / kst->sys.exit
-                                └─ KST → HAL (VGA, heap, panic)
+command_kern (load)
+  └─ transfer_recv_elf()    — recibe ELF por COM2 (protocolo KELF)
+       └─ kst->sys.elf_load(buf, size)
+            └─ kernel/elf.c: carga segmentos PT_LOAD en memoria identity-mapped
+                 └─ devuelve e_entry (_prog_entry en crt.o)
+                      └─ crt.S: zeros BSS, establece _kst, corrige _impure_ptr, llama main()
+                           └─ main() usa printf/malloc/exit
+                                └─ newlib libc → write/sbrk/_exit en newlib.c
+                                     └─ newlib.c → kst->io.write / kst->mem.sbrk / kst->sys.exit
+                                          └─ KST → HAL (consola, heap, panic)
 ```

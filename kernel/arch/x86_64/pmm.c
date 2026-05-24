@@ -73,6 +73,8 @@ uintptr_t pmm_alloc_pages(uint32_t n) {
 
 void pmm_free_pages(uintptr_t addr, uint32_t n) {
     uint32_t start = (uint32_t)(addr / PAGE_SIZE);
-    for (uint32_t i = start; i < start + n; i++)
+    for (uint32_t i = start; i < start + n; i++) {
+        if (i >= MAX_FRAMES) break;
         frame_set_free(i);
+    }
 }

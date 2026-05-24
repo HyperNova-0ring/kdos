@@ -32,7 +32,8 @@ void heap_init(uintptr_t base) {
 }
 
 void* heap_sbrk(intptr_t incr) {
-    if (incr <= 0) return (void*)-1;
+    if (incr == 0) return (void*)heap_cur;
+    if (incr < 0)  return (void*)-1;
 
     uintptr_t old = heap_cur;
     uintptr_t new = heap_cur + (uintptr_t)incr;

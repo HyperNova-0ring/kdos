@@ -22,7 +22,11 @@ CFLAGS = -ffreestanding -mno-red-zone -fno-stack-protector \
 TARGET_BIN = $(OUTDIR)/command.kern.bin
 TARGET_ELF = $(OUTDIR)/command.kern.elf
 
-OBJS = $(OUTDIR)/main.o
+# main.o must be first: the linker script places .module_header and
+# .text.entry (both in main.c) at the binary's very beginning.
+OBJS = $(OUTDIR)/main.o \
+       $(OUTDIR)/transfer.o \
+       $(OUTDIR)/recover.o
 
 # ─── Rules ──────────────────────────────────────────────────────
 
@@ -32,6 +36,11 @@ $(OUTDIR)/%.o: %.c
 	$(Q)mkdir -p $(OUTDIR)
 	$(Q)$(CC) $(CFLAGS) -c $< -o $@
 	@echo "[CC]  $<"
+
+$(OUTDIR)/%.o: %.S
+	$(Q)mkdir -p $(OUTDIR)
+	$(Q)$(CC) $(CFLAGS) -c $< -o $@
+	@echo "[AS]  $<"
 
 $(TARGET_ELF): $(OBJS)
 	$(Q)$(LD) -T module.ld -nostdlib $(OBJS) -o $@

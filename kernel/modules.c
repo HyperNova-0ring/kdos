@@ -1,6 +1,7 @@
 #include "modules.h"
 #include "hal.h"
 #include "heap.h"
+#include "elf.h"
 
 static module_list_t module_list;
 
@@ -22,6 +23,7 @@ static int kst_read(int fd, void* buf, size_t len) {
     char* dst = (char*)buf;
     for (size_t i = 0; i < len; i++) {
         int c = hal_console_getchar();
+        if (c < 0) return -1;
         dst[i] = (char)c;
         if (c == '\n') return (int)(i + 1);
     }
@@ -61,6 +63,19 @@ static int kst_getpid(void) {
     return 1;
 }
 
+static void kst_set_exc_hook(void (*fn)(uint64_t v, uint64_t r, uint64_t e,
+                                         uint64_t* out_rip, uint64_t* out_rsp)) {
+    hal_set_exc_hook(fn);
+}
+
+static void kst_clear_exc_hook(void) {
+    hal_clear_exc_hook();
+}
+
+static uintptr_t kst_elf_load(const void* data, size_t size) {
+    return elf_load(data, size);
+}
+
 /* ── Kernel Services Table ───────────────────────────────── */
 
 static kst_t kernel_kst = {
@@ -86,9 +101,12 @@ static kst_t kernel_kst = {
         .fstat  = kst_fstat,
     },
     .sys = {
-        .exit   = kst_exit,
-        .panic  = hal_panic,
-        .getpid = kst_getpid,
+        .exit           = kst_exit,
+        .panic          = hal_panic,
+        .getpid         = kst_getpid,
+        .set_exc_hook   = kst_set_exc_hook,
+        .clear_exc_hook = kst_clear_exc_hook,
+        .elf_load       = kst_elf_load,
     },
 };
 

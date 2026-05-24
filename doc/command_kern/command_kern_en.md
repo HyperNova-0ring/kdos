@@ -1,30 +1,37 @@
 # KDOS command_kern — Documentation
 
-`command_kern/` is the primary entry-point module of KDOS, analogous to `COMMAND.COM` in MS-DOS. After the kernel has finished its own initialization and run all auxiliary modules, it searches for this module by name and hands execution to it. It is the first interactive layer of the OS.
+`command_kern/` is the primary entry-point module of KDOS, analogous to `COMMAND.COM` in MS-DOS. It is the first interactive layer of the OS: it provides a command interpreter that lets you load and execute ELF programs transferred from the host.
 
 ## Directory Structure
 
 ```
 command_kern/
 ├── Makefile
-├── main.c       — Module source code
-└── module.ld    — Module linker script
+├── main.c        — Interactive shell: readline, dispatch, commands
+├── module.ld     — Flat binary module linker script
+├── transfer.h    — transfer_recv_elf() declaration
+├── transfer.c    — ELF reception over COM2 (KELF protocol)
+├── recover.h     — exc_save() / exc_restore declaration
+└── recover.S     — Context save/restore for exception recovery
 ```
 
-## Current State
+---
 
-The module is a minimal skeleton: it declares the module header as `COMMAND.KERN` version `1.0` and its entry function simply prints `"Hello World!\n"` via the KST console. It does not yet implement any interactive shell functionality.
+## Current Functionality
 
-```c
-#include "../kernel/module_abi.h"
+COMMAND.KERN implements a full interactive command interpreter:
 
-MODULE_HEADER("COMMAND.KERN", "1.0");
+| Command | Description |
+|---------|-------------|
+| `help`  | Show available commands |
+| `clear` | Clear the screen |
+| `halt`  | Halt the system (calls `kst->sys.panic`) |
+| `load`  | Receive an ELF over COM2 (KELF protocol) and run it |
 
-__attribute__((section(".text.entry")))
-void module_main(const kst_t* kst) {
-    kst->console.print("Hello World!\n");
-}
-```
+The main loop:
+1. Prints the `> ` prompt.
+2. Reads a line with `readline` (echo, backspace, max 128 chars).
+3. Dispatches to the matching command function.
 
 ---
 
@@ -40,12 +47,10 @@ make -C command_kern ARCH=x86_64
 
 ### Output
 
-| Artifact                              | Description                     |
-|---------------------------------------|---------------------------------|
-| `build/x86_64/command.kern.elf`       | ELF intermediate                |
-| `build/x86_64/command.kern.bin`       | Final flat binary               |
-
-The root Makefile copies `command.kern.bin` to `build/x86_64/modules/` and then into the ISO's `modules/` directory.
+| Artifact                           | Description                  |
+|------------------------------------|------------------------------|
+| `build/x86_64/command.kern.elf`    | ELF intermediate             |
+| `build/x86_64/command.kern.bin`    | Final flat binary            |
 
 ### Compiler Flags
 
@@ -56,8 +61,98 @@ The root Makefile copies `command.kern.bin` to `build/x86_64/modules/` and then 
 -I../kernel
 ```
 
-`-fPIC` is required because the module is loaded at an arbitrary physical address.  
-The tight alignment flags (`-falign-*=1`) minimize dead bytes between functions in the flat binary.
+`-fPIC` required because the module loads at an arbitrary physical address.
+
+---
+
+## ELF Transfer Protocol — KELF
+
+The `load` command waits for an ELF on COM2 packaged in the KELF protocol:
+
+```
+Bytes 0–3 : magic = { 'K', 'E', 'L', 'F' }
+Bytes 4–7 : size  = uint32_t, total ELF byte count (little-endian)
+Bytes 8+  : raw ELF data
+```
+
+COM2 (0x2F8) is initialized to 115200 baud, 8N1, FIFO enabled, on the first call to `transfer_recv_elf`. Hard cap: 2 MB.
+
+### Sending from the host (Python)
+
+```python
+python3 -c "
+    import sys, struct
+    d = open('prog.elf','rb').read()
+    sys.stdout.buffer.write(b'KELF' + struct.pack('<I', len(d)) + d)
+" | nc localhost 4444
+```
+
+(QEMU exposes COM2 on `tcp:4444` with `make run`.)
+
+---
+
+## ELF Load and Execution
+
+When `transfer_recv_elf` succeeds:
+
+1. Prints the received byte count.
+2. Calls `kst->sys.elf_load(buf, size)` — the neutral kernel ELF loader.
+3. If `elf_load` returns 0: prints an error and returns to the prompt.
+4. On success: prints the entry point address and calls `elf_exec`.
+
+`elf_exec` installs an exception hook, calls the program, and on return:
+- No exception: prints `"Program finished."`.
+- Exception caught: prints the exception name, RIP, and error code.
+
+---
+
+## Exception Recovery — `recover.S` + `exc_hook_fn`
+
+COMMAND.KERN catches exceptions raised by ELF programs without crashing the shell. The mechanism:
+
+### `exc_save()` / `exc_restore`
+
+```c
+int exc_save(void);       // saves callee-saved registers + RSP + return address
+extern void exc_restore;  // IRETQ target: restores saved state and returns 1
+```
+
+`exc_save()` returns 0 on first call. If the program faults, the IDT calls the hook, which makes IRETQ jump to `exc_restore`, which restores the `elf_exec` frame and returns 1.
+
+### `exc_hook_fn`
+
+```c
+static void exc_hook_fn(uint64_t vec, uint64_t rip, uint64_t err,
+                         uint64_t* out_rip, uint64_t* out_rsp) {
+    exc_vec = vec; exc_rip = rip; exc_err = err;
+    __asm__ volatile ("leaq exc_restore(%%rip), %0" : "=r"(*out_rip));
+    *out_rsp = exc_restore_rsp;
+}
+```
+
+`leaq exc_restore(%rip)` resolves the address at runtime (PCREL), correct for a PIC module without a dynamic linker.
+
+---
+
+## BSS Zeroing — PIC Flat Binary Module
+
+GRUB does not zero flat binary module memory. `module_main` does it explicitly at startup using RIP-relative inline asm (C with `-fPIC` cannot be used here since the GOT is not relocated):
+
+```c
+__asm__ volatile (
+    "leaq __bss_start(%%rip), %%rdi\n\t"
+    "leaq __bss_end(%%rip),   %%rax\n\t"
+    "subq %%rdi, %%rax\n\t"
+    "jz   1f\n\t"
+    "movq %%rax, %%rcx\n\t"
+    "xorl %%eax, %%eax\n\t"
+    "rep  stosb\n\t"
+    "1:"
+    : : : "rax", "rcx", "rdi", "memory"
+);
+```
+
+`__bss_start` and `__bss_end` are exported by `module.ld`.
 
 ---
 
@@ -71,58 +166,47 @@ The tight alignment flags (`-falign-*=1`) minimize dead bytes between functions 
 .data   ALIGN(1)
 .got    ALIGN(1)
 .got.plt ALIGN(1)
-.bss    ALIGN(1)
-/DISCARD/ : { .eh_frame, .comment, .note.* }
+.bss    ALIGN(1) : {
+    __bss_start = .;
+    *(.bss .bss.*)
+    __bss_end = .;
+}
+/DISCARD/ : { .eh_frame .comment .note.* }
 ```
 
-Identical in structure to `modules/hello/module.ld`. Module loads at virtual address 0; the kernel reads the header at offset 0 and calls the entry at offset 56 (`sizeof(module_header_t)`).
+Base address 0; the kernel reads the header at offset 0 and calls the entry at offset 56 (`sizeof(module_header_t)`).
 
 ---
 
 ## How the Kernel Launches It
 
-`modules_launch_entry()` in `kernel/modules.c` searches the module list for a module named `COMMAND.KERN` (checked against both cmdline and `module_header_t.name`). When found:
+`modules_launch_entry()` in `kernel/modules.c` searches for a module named `COMMAND.KERN` (checked against both cmdline and `module_header_t.name`). When found:
 
 1. Prints `"Launching COMMAND.KERN..."`.
-2. Computes entry address: `module_start + sizeof(module_header_t)` = `module_start + 56`.
-3. Casts entry to `module_entry_fn` and calls it with `&kernel_kst`.
-4. The module runs; when it returns, `modules_launch_entry` returns and `kernel_main` calls `hal_panic("kernel_main end reached.")`.
-
-There is currently no mechanism for the shell to yield back to the kernel gracefully. A return from `module_main` is considered an error.
+2. Computes entry = `module_start + sizeof(module_header_t)` (= `module_start + 56`).
+3. Calls `entry(&kernel_kst)`.
+4. COMMAND.KERN runs in an infinite loop (`for (;;) { readline + dispatch }`). If it returns, `kernel_main` calls `hal_panic`.
 
 ---
 
 ## ABI Used
 
-`command_kern` uses `module_abi.h` directly (no CRT, no newlib). The entry function follows the bare module ABI:
+`command_kern` uses `module_abi.h` directly, without CRT or newlib. It follows the bare module ABI:
 
 ```c
 typedef void (*module_entry_fn)(const kst_t* kst);
 ```
 
-To use `printf`, `malloc`, or other libc functions, the module would need to be rebuilt with the CRT + newlib from `newlib/`. See `doc/newlib/newlib_en.md` for how to do this.
+The KST provides everything needed: console, heap (for the ELF receive buffer), `elf_load`, and the exception hook.
 
 ---
 
 ## GRUB Configuration
 
-The root Makefile auto-generates `grub.cfg` during `make iso`. For each `.bin` file in `build/x86_64/iso/modules/`, it adds:
+The root Makefile auto-generates `grub.cfg` during `make iso`. For each `.bin` in `build/x86_64/iso/modules/`:
 
 ```
 module2 /modules/command.kern.bin command.kern.bin
 ```
 
-GRUB passes the module's filename as its command line. The kernel stores this in `module_t.cmdline`. The module is also identified by `module_header_t.name = "COMMAND.KERN"`.
-
----
-
-## Planned Functionality
-
-As KDOS evolves, `command_kern` is intended to become a full interactive command interpreter with:
-
-- Reading keystrokes via `kst->console.getchar()` (currently a stub returning -1, awaiting keyboard driver)
-- Parsing and dispatching built-in commands
-- Loading and executing additional modules
-- A basic filesystem interface once storage drivers are implemented
-
-This makes `command_kern` the primary place where future OS functionality will be exercised.
+GRUB passes the filename as the module command line. The kernel stores this in `module_t.cmdline` and also identifies the module by `module_header_t.name = "COMMAND.KERN"`.

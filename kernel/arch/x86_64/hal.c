@@ -186,12 +186,24 @@ void      hal_mem_free_pages(uintptr_t addr, uint32_t n) { pmm_free_pages(addr, 
 
 void hal_idt_init(void) { idt_init(); }
 
+void hal_set_exc_hook(void (*fn)(uint64_t vec, uint64_t rip, uint64_t err,
+                                  uint64_t* out_rip, uint64_t* out_rsp)) {
+    idt_set_exc_hook(fn);
+}
+void hal_clear_exc_hook(void) { idt_clear_exc_hook(); }
+
+/* ── Console color ───────────────────────────────────── */
+
+void hal_console_panic_color(void) {
+    if (active_console == HAL_CONSOLE_VGA)
+        vga_set_color(VGA_WHITE, VGA_RED);
+}
+
 /* ── Panic ───────────────────────────────────────────── */
 
 void hal_panic(const char* msg) {
     hal_cpu_disable_interrupts();
-    if (active_console == HAL_CONSOLE_VGA)
-        vga_set_color(VGA_WHITE, VGA_RED);
+    hal_console_panic_color();
     hal_console_print("\n\n  KERNEL PANIC: ");
     hal_console_print(msg);
     hal_console_print("  \n");

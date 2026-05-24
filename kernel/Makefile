@@ -31,7 +31,7 @@ CFLAGS  = -ffreestanding -mno-red-zone -fno-stack-protector \
 LDFLAGS = -T $(ARCH_DIR)/link.ld -nostdlib
 
 # Sources
-C_COMMON_SRCS = kernel.c modules.c heap.c
+C_COMMON_SRCS = kernel.c modules.c heap.c elf.c
 C_ARCH_SRCS   = $(wildcard $(ARCH_DIR)/*.c)
 S_ARCH_SRCS   = $(wildcard $(ARCH_DIR)/*.S)
 

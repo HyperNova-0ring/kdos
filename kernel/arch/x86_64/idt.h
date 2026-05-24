@@ -20,4 +20,13 @@ typedef struct {
 
 void idt_init(void);
 
+/* Program-level exception hook — if set, fires instead of kernel panic.
+   Auto-cleared on entry to prevent re-entrant faults.
+   The hook fills *out_rip / *out_rsp with the recovery address and stack;
+   if *out_rip is non-zero the handler redirects the IRETQ frame there. */
+typedef void (*exc_hook_t)(uint64_t vec, uint64_t rip, uint64_t err,
+                            uint64_t* out_rip, uint64_t* out_rsp);
+void idt_set_exc_hook(exc_hook_t fn);
+void idt_clear_exc_hook(void);
+
 #endif
